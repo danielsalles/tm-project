@@ -56,8 +56,11 @@ jobs:
 
       - name: compile generator (MSVC + D3DX9 real)
         run: |
+          robocopy Dependencies/Directx/Include dxsdk_inc /E /NFL /NDL /NJH /NJS | Out-Null
+          # basetsd.h do SDK 2003 conflita com o Windows SDK moderno — remover a cópia
+          Remove-Item dxsdk_inc/basetsd.h
           cl /EHsc /W3 tests/golden/golden_generator.cpp `
-            /I Dependencies/Directx/Include `
+            /I dxsdk_inc `
             /link /LIBPATH:Dependencies/Directx/Lib d3dx9.lib `
             /OUT:golden_generator.exe
 

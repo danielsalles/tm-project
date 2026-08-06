@@ -10,6 +10,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <cstdint>
 
 static uint32_t s_seed = 0x12345678;
 static float frand(float lo, float hi) { // LCG próprio — determinístico entre CRTs
