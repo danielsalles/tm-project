@@ -16,29 +16,6 @@ uint32_t ReadU32(const uint8_t* p) {
     return (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
 }
 
-// Shared parser for the 264-byte-record texture lists (model/env/effect/ui all use
-// stTextureListInfo). `maxEntries` mirrors the original's fixed-size array.
-bool ParseTextureList(const uint8_t* data, size_t size, size_t maxEntries,
-                      std::vector<TextureListEntry>& out) {
-    constexpr size_t kEntry = 264;
-    size_t count = size / kEntry;
-    if (count > maxEntries)
-        count = maxEntries;
-
-    out.resize(count);
-    for (size_t i = 0; i < count; ++i) {
-        const uint8_t* p = data + i * kEntry;
-        memcpy(out[i].fileName, p, 255);
-        out[i].fileName[254] = '\0';
-        out[i].cAlpha = (char)p[255];
-        out[i].dwLastUsedTime = ReadU32(p + 256);
-        out[i].dwShowTime = ReadU32(p + 260);
-        if (out[i].cAlpha == 0)
-            out[i].cAlpha = 'N';
-    }
-    return count > 0;
-}
-
 // .wyt = "WT10" + TGA without the 18-byte footer (validated on mesh/cbt054.wyt:
 // uncompressed BGR(A), type 2). stb_image parses the TGA directly (footer not
 // needed) and handles the bottom-left origin flip.
@@ -178,9 +155,26 @@ GLuint LoadTextureWYS(const uint8_t* fileBytes, size_t size) {
 }
 
 bool GLTextureManager::LoadModelTextureList(const uint8_t* data, size_t size) {
-    const bool ok = ParseTextureList(data, size, 2048, m_entries);
-    m_textures.assign(m_entries.size(), 0);
-    return ok;
+    // Same 528-byte A/B record layout as the env list (validated on
+    // MeshTextureList.bin: index 67 = "mesh\hs0050.wys" etc.).
+    constexpr size_t kEntry = 528;
+    size_t count = size / kEntry;
+    if (count > 4096)
+        count = 4096;
+
+    m_entries.resize(count);
+    m_textures.assign(count, 0);
+    for (size_t i = 0; i < count; ++i) {
+        const uint8_t* p = data + i * kEntry;
+        memcpy(m_entries[i].fileName, p, 255);
+        m_entries[i].fileName[254] = '\0';
+        m_entries[i].cAlpha = (char)p[255];
+        m_entries[i].dwLastUsedTime = ReadU32(p + 256);
+        m_entries[i].dwShowTime = ReadU32(p + 260);
+        if (m_entries[i].cAlpha == 0 || m_entries[i].cAlpha == (char)0xCD)
+            m_entries[i].cAlpha = 'N';
+    }
+    return count > 0;
 }
 
 bool GLTextureManager::LoadEnvTextureList(const uint8_t* data, size_t size) {

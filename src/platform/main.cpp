@@ -14,6 +14,9 @@
 #include "gl/GLMesh.h"
 #include "gl/GLTexture.h"
 #include "scene/FieldView.h"
+#include "world/SkyDome.h"
+
+#include <ctime>
 
 static void WriteBootReport(const char* path) {
     FILE* f = fopen(path, "w");
@@ -82,6 +85,8 @@ int main(int argc, char** argv) {
     const char* shotPath = nullptr;
     int shotFrames = 30;
     char mapName[32] = "Field2723";
+    int weather = -1;   // -1 = like the original select-server: day-of-month % 4
+    float startPitch = -0.7f, startYaw = 0.0f;
     for (int i = 1; i < argc; ++i) {
         if (!strcmp(argv[i], "--shot") && i + 1 < argc)
             shotPath = argv[++i];
@@ -90,6 +95,12 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "--map") && i + 1 < argc) {
             snprintf(mapName, sizeof mapName, "%s", argv[++i]);
         }
+        else if (!strcmp(argv[i], "--weather") && i + 1 < argc)
+            weather = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--pitch") && i + 1 < argc)
+            startPitch = (float)atof(argv[++i]);
+        else if (!strcmp(argv[i], "--yaw") && i + 1 < argc)
+            startYaw = (float)atof(argv[++i]);
     }
 
     if (!SDL_Init(SDL_INIT_VIDEO)) {
@@ -174,10 +185,32 @@ int main(int argc, char** argv) {
             tmx::Log("assets do jogo nao encontrados — modo fallback (triangulo)");
     }
 
+    // Sky dome + weather (phase 2 D4). Default weather = day-of-month % 4 like the
+    // original select-server scene (TMSelectServerScene.cpp:323-325).
+    tmx::SkyDome sky;
+    bool skyLoaded = false;
+    if (sceneLoaded) {
+        std::string skyErr;
+        std::string meshList;
+        ReadWholeFileText("Mesh\\MeshList.txt", meshList);
+        if (sky.Init(meshList, textures, &skyErr)) {
+            skyLoaded = true;
+            if (weather < 0) {
+                time_t now = time(nullptr);
+                struct tm* lt = localtime(&now);
+                weather = (lt ? lt->tm_mday : 1) % 4;
+            }
+            sky.SetWeather(weather);
+            tmx::Log("clima: %d (0=sol 1=nublado 2=chuva 3=neve)", weather);
+        } else {
+            tmx::Log("sky: %s", skyErr.c_str());
+        }
+    }
+
     // Free-fly camera (phase 2 validation): starts above the scene center looking
     // down; WASD moves, Q/E down/up, left-mouse drag looks, shift = fast.
     D3DXMATRIX matView, matProj;
-    float camX, camY, camZ, camYaw = 0.0f, camPitch = -0.7f;
+    float camX, camY, camZ, camYaw = startYaw, camPitch = startPitch;
     {
         float bmin[3], bmax[3];
         view.Bounds(bmin, bmax);
@@ -186,8 +219,8 @@ int main(int argc, char** argv) {
             bmax[0] = bmax[1] = bmax[2] = 1.0f;
         }
         camX = (bmin[0] + bmax[0]) * 0.5f;
-        camZ = (bmin[2] + bmax[2]) * 0.5f - 30.0f;
-        camY = (bmax[1] > bmin[1] ? bmax[1] : 5.0f) + 25.0f;
+        camZ = (bmin[2] + bmax[2]) * 0.5f - 14.0f;
+        camY = (bmax[1] > bmin[1] ? bmax[1] : 5.0f) + 8.0f;
     }
     auto updateView = [&]() {
         const float cp = cosf(camPitch);
@@ -207,15 +240,18 @@ int main(int argc, char** argv) {
     }
     updateView();
 
-    // Scene lighting: directions from RenderDevice's constructor (RenderDevice.cpp:92-116),
-    // colors are weather-driven in the original (m_colorLight) — white until D4.
-    // Brightness model = vColor x lightSum + emissive(0.3) (D3D fixed pipe, matAmb=0).
+    // Scene lighting/weather: SkyDome applies fog + weather light colors (D4).
+    // Directions are the RenderDevice ctor defaults (RenderDevice.cpp:92-116).
     {
-        D3DXVECTOR3 d0(-10.0f, 10.0f, -6.0f), d1(10.0f, -14.0f, 6.0f);
-        D3DXVec3Normalize(&d0, &d0);
-        D3DXVec3Normalize(&d1, &d1);
-        device.SetDirectionalLight(0, d0, 1.0f, 1.0f, 1.0f);
-        device.SetDirectionalLight(1, d1, 1.0f, 1.0f, 1.0f);
+        if (skyLoaded)
+            sky.ApplyWeather(device);
+        else {
+            D3DXVECTOR3 d0(-10.0f, 10.0f, -6.0f), d1(10.0f, -14.0f, 6.0f);
+            D3DXVec3Normalize(&d0, &d0);
+            D3DXVec3Normalize(&d1, &d1);
+            device.SetDirectionalLight(0, d0, 1.0f, 1.0f, 1.0f);
+            device.SetDirectionalLight(1, d1, 1.0f, 1.0f, 1.0f);
+        }
         device.SetAmbient(1.0f, 1.0f, 1.0f, 1.0f); // block-1 D3DRS_AMBIENT=0x33FFFFFF
     }
 
@@ -313,9 +349,17 @@ int main(int argc, char** argv) {
         updateView();
 
         device.BeginFrame();
-        device.Clear(0.08f, 0.10f, 0.16f, 1.0f); // sky color arrives with the sky dome (D4)
+        {
+            const float* cc = skyLoaded ? sky.ClearColor() : nullptr;
+            if (cc)
+                device.Clear(cc[0], cc[1], cc[2], 1.0f);
+            else
+                device.Clear(0.08f, 0.10f, 0.16f, 1.0f);
+        }
 
         if (sceneLoaded) {
+            if (skyLoaded)
+                sky.Render(device, camX, camZ);
             view.Render(device);
         } else {
             device.SetRenderStateBlock(1);
@@ -334,6 +378,7 @@ int main(int argc, char** argv) {
     }
 
     tmx::Log("shutdown limpo");
+    sky.Destroy();
     view.Destroy();
     fallbackMesh.Destroy();
     textures.DestroyAll();

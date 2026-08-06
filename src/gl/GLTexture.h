@@ -64,6 +64,11 @@ public:
     GLuint GetModelTexture(int index);
     GLuint GetEnvTexture(int index);
 
+    // Raw list file name (for debugging / weather-driven overrides).
+    const char* ModelTextureFileName(int index) const {
+        return (index >= 0 && index < (int)m_entries.size()) ? m_entries[index].fileName : "";
+    }
+
     void DestroyAll();
 
 private:
