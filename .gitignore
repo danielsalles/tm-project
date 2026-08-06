@@ -1,21 +1,81 @@
 # --- Game assets (proprietary WYD client data, NOT committed — doc 15 §8) ---
-# Extract Global.zip at the repo root; the port reads them via OpenAsset.
-/Mesh/
-/mesh/
-/Env/
-/env/
-/UI/
-/Effect/
-/Shader/
-/sound/
-/Sound/
-/Minimap/
+# Every top-level entry of Global.zip is ignored; extract it at the repo root.
 /Global.zip
+/Adobe AIR
+/AniSound4.txt
+/ArenaVisualData.bin
+/Config.bin
+/Effect
+/Env
+/EventCoupon.bin
+/Graphics.ini
+/HeightMap.dat
+/InitItem.bin
+/ItemList.bin
+/ItemPrice.bin
+/JPGLib.dll
+/JProtectDll.dll
+/Lang
+/Lang.txt
+/Launcher.hat
+/META-INF
+/Missionitems.bin
+/Mixlist.bin
+/MountData.bin
+/MountDataV.bin
+/Music.ini
+/Music.txt
+/NUI
+/Newtonsoft.Json.dll
+/Newtonsoft.Json.xml
+/ScreenShot
+/SkillData.bin
+/System.IO.Compression.ZipFile.dll
+/System.IO.Compression.dll
+/UI
+/Updater.exe
+/Updater.exe.config
+/WNotice.ini
+/WYD.exe
+/WYD.log
+/Wgmrk.ini
+/WydConfig.exe
+/WydConfig.swf
+/ZoneXY.txt
+/cdata.bin
+/config.json
+/config_settings.json
+/config_settings_origem.json
+/curse.bin
+/d3dx9_42.dll
+/extraitem.bin
+/itemhelp.dat
+/itemicon.bin
+/itemname.bin
+/jlock101.VXD
+/jlock101.sys
+/jlock102.VXD
+/jlock102.sys
+/ls_version.nfo
+/mesh
+/mimetype
+/minimap.dat
+/music
+/object.bin
+/object_mask.txt
+/patches
+/serverlist.bin
+/shader
+/sn.bin
+/sound
+/sound.txt
 
 # --- Runtime artifacts ---
 /tm.log
 /boot_report.txt
 /screenshot.bmp
+/shot_*.bmp
+/shot_*.png
 
 # --- Build ---
 /build/

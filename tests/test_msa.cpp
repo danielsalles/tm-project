@@ -11,7 +11,7 @@ namespace {
 
 // Builds a synthetic .msa blob in the exact disk layout the original reads
 // (TMMesh.cpp:481-728):
-//   [u32 fvf][u32 fileStride][u32 attCount][attCount x 16B attr ranges]
+//   [u32 fvf][u32 fileStride][u32 attCount][attCount x 20B attr ranges]
 //   [attCount x 11B texture names][u32 ibBytes][u16 IB][u32 vbBytes][VB]
 class MsaBuilder {
 public:
@@ -20,7 +20,7 @@ public:
         return *this;
     }
     MsaBuilder& Attr(uint32_t id, uint32_t faceStart, uint32_t faceCount, uint32_t vertStart) {
-        U32(id); U32(faceStart); U32(faceCount); U32(vertStart);
+        U32(id); U32(faceStart); U32(faceCount); U32(vertStart); U32(0 /*vertexCount*/);
         return *this;
     }
     MsaBuilder& TexName(const char* raw11) {  // exactly 11 bytes written as-is
@@ -103,15 +103,15 @@ TEST(msa, texture_name_11_bytes_path_and_ext_stripped) {
     EXPECT_TRUE(data.textureNames[0] == "cd_ef");  // path e extensão removidos
 }
 
-TEST(msa, fvf530_expands_stride_and_duplicates_uv) {
-    // disk vertex (32B): pos3 normal3 uv0(2)  →  memory (40B): + uv1 = uv0
+TEST(msa, fvf274_expands_to_530_stride_and_duplicates_uv) {
+    // disk: fvf 274 (pos3 normal3 uv0, 32B) -> memory: fvf 530 (40B, uv1 = uv0)
     std::vector<float> verts;
     for (int i = 0; i < 3; ++i) {
         float v[8] = { (float)i, 1.0f, 2.0f, 0.0f, 1.0f, 0.0f, 0.25f + i, 0.75f };
         verts.insert(verts.end(), v, v + 8);
     }
     auto blob = MsaBuilder()
-        .Header(530, 32, 1)
+        .Header(274, 32, 1)
         .Attr(0, 0, 1, 0)
         .TexName("tex\0\0\0\0\0\0\0\0")
         .IB({ 0, 1, 2 })
@@ -120,6 +120,7 @@ TEST(msa, fvf530_expands_stride_and_duplicates_uv) {
 
     MsaData data;
     EXPECT_TRUE(tmx::ParseMsa(blob.data(), blob.size(), data, nullptr));
+    EXPECT_EQ(data.fvf, 530u);               // +256 (TEX1) como no original
     EXPECT_EQ(data.memStride, 40u);
     EXPECT_EQ(data.NumVerts(), 3u);
 

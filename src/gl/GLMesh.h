@@ -15,7 +15,7 @@ struct MsaData {
     uint32_t fileStride = 0;              // stride on disk
     uint32_t memStride = 0;               // stride in memory (fileStride, or +8 when fvf != 322)
 
-    struct AttrRange {                    // D3DXATTRIBUTERANGE, 16 bytes
+    struct AttrRange {                    // D3DXATTRIBUTERANGE, 20 bytes on disk
         uint32_t attribId;
         uint32_t faceStart;
         uint32_t faceCount;
@@ -34,7 +34,8 @@ struct MsaData {
 // Parses an .msa blob. Replicates the original's quirks on purpose:
 //  - texture names are 11 bytes, NOT NUL-terminated on disk
 //  - fvf != 322: vertices on disk are 8 bytes shorter than in memory; the loader
-//    expands and duplicates uv0 -> uv1 (fvf 530), including the original's
+//    expands, adds +256 to the FVF (TEX1) like the original, and duplicates
+//    uv0 -> uv1 (disk fvf 274 -> memory fvf 530), including the original's
 //    nVerts-1 loop bound (last vertex keeps zeroed uv1)
 bool ParseMsa(const uint8_t* data, size_t size, MsaData& out, std::string* err);
 

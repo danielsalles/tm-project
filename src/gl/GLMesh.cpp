@@ -60,14 +60,14 @@ bool ParseMsa(const uint8_t* data, size_t size, MsaData& out, std::string* err) 
 
     out.subsets.resize(attCount);
     for (uint32_t i = 0; i < attCount; ++i) {
-        if (!need(16))
+        if (!need(20))
             return fail("truncated attr ranges");
         out.subsets[i].attribId    = ReadU32(data + pos + 0);
         out.subsets[i].faceStart   = ReadU32(data + pos + 4);
         out.subsets[i].faceCount   = ReadU32(data + pos + 8);
         out.subsets[i].vertexStart = ReadU32(data + pos + 12);
-        // vertexCount field present on disk but unused by the original draw path
-        pos += 16;
+        out.subsets[i].vertexCount = ReadU32(data + pos + 16);
+        pos += 20;
     }
 
     out.textureNames.resize(attCount);
@@ -103,13 +103,16 @@ bool ParseMsa(const uint8_t* data, size_t size, MsaData& out, std::string* err) 
     memcpy(out.vertices.data(), data + pos, (size_t)nVerts * out.fileStride);
 
     if (out.fvf != 322) {
-        // Expand: disk stride is 8 bytes shorter; duplicate uv0 -> uv1 for fvf 530,
-        // keeping the original's nVerts-1 loop bound (TMMesh.cpp:688-696).
+        // Expand: disk stride is 8 bytes shorter; FVF gains +256 (TEX1) like the
+        // original (m_dwFVF += 256), so disk fvf 274 becomes memory fvf 530 and
+        // uv1 = uv0. The uv copy keeps the original's nVerts-1 loop bound
+        // (TMMesh.cpp:688-696) — last vertex keeps zeroed uv1.
         std::vector<uint8_t> expanded((size_t)nVerts * (out.fileStride + 8), 0);
         for (uint32_t i = 0; i < nVerts; ++i)
             memcpy(expanded.data() + (size_t)i * (out.fileStride + 8),
                    out.vertices.data() + (size_t)i * out.fileStride, out.fileStride);
         out.memStride = out.fileStride + 8;
+        out.fvf += 256;
 
         if (out.fvf == 530) {
             float* fv = reinterpret_cast<float*>(expanded.data());

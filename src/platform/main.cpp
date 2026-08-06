@@ -5,6 +5,7 @@
 #include <stb_image_write.h>
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <vector>
 
@@ -76,7 +77,15 @@ static void SaveScreenshot(SDL_Window* window, const char* path) {
 }
 
 int main(int argc, char** argv) {
-    (void)argc; (void)argv;
+    // --shot <path> [frames N]: render N frames, save screenshot, exit (automation/CI)
+    const char* shotPath = nullptr;
+    int shotFrames = 30;
+    for (int i = 1; i < argc; ++i) {
+        if (!strcmp(argv[i], "--shot") && i + 1 < argc)
+            shotPath = argv[++i];
+        else if (!strcmp(argv[i], "--frames") && i + 1 < argc)
+            shotFrames = atoi(argv[++i]);
+    }
 
     if (!SDL_Init(SDL_INIT_VIDEO)) {
         SDL_Log("SDL_Init falhou: %s", SDL_GetError());
@@ -257,6 +266,11 @@ int main(int argc, char** argv) {
         }
 
         device.EndFrame();
+
+        if (shotPath && --shotFrames <= 0) {
+            SaveScreenshot(window, shotPath);
+            break;
+        }
     }
 
     tmx::Log("shutdown limpo (%d meshes carregadas)", view.MeshesLoaded());
