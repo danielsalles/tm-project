@@ -246,4 +246,162 @@ void GroundDecalFx::Render(const SkillCtx& ctx) {
     ctx.decal->Draw(*ctx.device, *ctx.textures, m_d.textureIndex, verts, idx, m_d.blend);
 }
 
+// ---------------------------------------------------------------------------
+// Projectile (TMArrow-lite)
+// ---------------------------------------------------------------------------
+
+Projectile::Projectile(const ProjectileDesc& d)
+    : m_d(d) {
+    D3DXVECTOR3 diff(d.targetX - d.startX, d.targetY - d.startY, d.targetZ - d.startZ);
+    const float len = D3DXVec3Length(&diff);
+    m_life = (uint32_t)(100.0f * len);   // 100ms per unit (TMArrow base factor)
+    if (m_life < 1) m_life = 1;
+    if (m_life > 5000) m_life = 5000;
+    m_cur = D3DXVECTOR3(d.startX, d.startY, d.startZ);
+}
+
+bool Projectile::FrameMove(uint32_t nowMs, const SkillCtx& ctx) {
+    const uint32_t elapsed = nowMs - StartTime();
+    m_progress = m_life ? (float)elapsed / (float)m_life : 1.0f;
+    if (m_progress >= 1.0f) {
+        if (!m_impacted) {
+            m_impacted = true;
+            SpawnImpact(nowMs, ctx);
+        }
+        return false;   // projectile itself is done (impact children live on)
+    }
+    m_cur.x = m_d.startX + (m_d.targetX - m_d.startX) * m_progress;
+    m_cur.z = m_d.startZ + (m_d.targetZ - m_d.startZ) * m_progress;
+    m_cur.y = m_d.startY + (m_d.targetY - m_d.startY) * m_progress;
+    if (m_d.arc)
+        m_cur.y += sinf(m_progress * kPi * 4.0f) * 0.1f;   // type 152 hop
+    return true;
+}
+
+void Projectile::Render(const SkillCtx& ctx) {
+    if (!ctx.fx) return;
+    // Trail billboard at the current position (stickGround offset -0.5 like the
+    // original TMArrow spawn).
+    Billboard b;
+    BillboardDesc& d = b.d;
+    d.textureIndex = m_d.trailTex;
+    d.lifeTimeMs = 1000;
+    d.scaleX = d.scaleY = d.scaleZ = 0.3f;
+    d.fade = 1;
+    d.lookCam = 1;
+    d.x = m_cur.x; d.y = m_cur.y - 0.5f; d.z = m_cur.z;
+    d.bgra = m_d.trailBgra;
+    b.createMs = StartTime();
+    b.curBgra = m_d.trailBgra;
+    BillboardFrameMove(b, StartTime() + (uint32_t)(m_progress * m_life),
+                       ctx.camYawH, ctx.camPitchV, 0);
+    ctx.fx->Emit(BillboardToQuad(b, 1));
+}
+
+void Projectile::SpawnImpact(uint32_t nowMs, const SkillCtx& ctx) {
+    if (!ctx.host) return;
+    const float y = m_d.targetY;
+    // Mesh ring (TMEffectMesh type 4 expanding).
+    if (m_d.impactMeshIndex >= 0 && ctx.skillMesh) {
+        SkillMeshDesc md;
+        md.meshIndex = m_d.impactMeshIndex;
+        md.bgra = m_d.impactBgra;
+        md.type = 4;
+        md.textureIndex = m_d.impactTexIndex;
+        md.lifeTime = 200;
+        md.cycleTime = 200;
+        md.blend = 1;
+        ctx.host->Add(MakeSkillEffect<SkillMeshFx>(nowMs, m_d.targetX, y, m_d.targetZ, md));
+    }
+    // Ground lightmap decal.
+    if (ctx.decal && ctx.terrain) {
+        GroundDecalDesc dd;
+        dd.gridNum = 7;
+        dd.textureIndex = m_d.impactDecalTex;
+        dd.bgra = m_d.impactBgra;
+        dd.blend = 1;
+        dd.lifeTime = 200;
+        ctx.host->Add(MakeSkillEffect<GroundDecalFx>(nowMs, m_d.targetX, m_d.targetZ, dd));
+    }
+    // Splash burst.
+    ctx.host->Add(std::make_unique<SkillBurst>(m_d.targetX, y, m_d.targetZ,
+        m_d.trailTex, 600, m_d.splashCount, m_d.splashRadius, 0.5f, m_d.impactBgra));
+}
+
+// ---------------------------------------------------------------------------
+// MeteorStorm
+// ---------------------------------------------------------------------------
+
+MeteorStorm::MeteorStorm(float x, float y, float z, int level, uint32_t nowMs)
+    : m_x(x), m_y(y), m_z(z), m_level(level) {
+    m_strikes = 3 + level * 2;          // L1=5, L6=15
+    m_life = (uint32_t)(300 + level * 120);
+    m_perStrike = m_life / (uint32_t)m_strikes;
+}
+
+bool MeteorStorm::FrameMove(uint32_t nowMs, const SkillCtx& ctx) {
+    const uint32_t elapsed = nowMs - StartTime();
+    if (elapsed > m_life + 400)
+        return false;
+    // Schedule the next scattered strike.
+    if (m_nextStrike < m_strikes && elapsed >= m_nextStrike * (uint64_t)m_perStrike) {
+        ++m_nextStrike;
+        if (ctx.host) {
+            const float ang = (float)(rand() % 628) * 0.01f;
+            const float rad = (float)(rand() % (m_level + 1)) * 0.6f;
+            const float sx = m_x + cosf(ang) * rad;
+            const float sz = m_z + sinf(ang) * rad;
+            // Falling glow then impact burst + lightmap.
+            ctx.host->Add(std::make_unique<SkillGlow>(sx, m_y + 3.0f, sz, 11,
+                400, 1.2f, 0xFFFF7711));
+            ctx.host->Add(std::make_unique<SkillBurst>(sx, m_y, sz, 11,
+                600, 14, 1.4f, 0.6f, 0xFFAA3300));
+            if (ctx.decal && ctx.terrain) {
+                GroundDecalDesc dd;
+                dd.gridNum = 4; dd.textureIndex = 7;
+                dd.bgra = 0xFFFF7711; dd.blend = 1; dd.lifeTime = 600;
+                ctx.host->Add(MakeSkillEffect<GroundDecalFx>(nowMs, sx, sz, dd));
+            }
+        }
+    }
+    return true;
+}
+
+// ---------------------------------------------------------------------------
+// MagicShield (buff)
+// ---------------------------------------------------------------------------
+
+MagicShield::MagicShield(float x, float y, float z, uint32_t lifeMs, uint32_t bgra)
+    : m_x(x), m_y(y), m_z(z), m_life(lifeMs), m_bgra(bgra) {}
+
+bool MagicShield::FrameMove(uint32_t nowMs, const SkillCtx& ctx) {
+    (void)ctx;
+    m_nowMs = nowMs;
+    return m_life == 0 || nowMs - StartTime() < m_life;
+}
+
+void MagicShield::Render(const SkillCtx& ctx) {
+    if (!ctx.fx) return;
+    // Orbiting ring of 6 billboards (TMSkillMagicShield shell, tex 56).
+    const float spin = (m_nowMs % 2000) * (kPi / 1000.0f);   // full turn / 2s
+    for (int i = 0; i < 6; ++i) {
+        const float ang = spin + kPi * 2.0f * i / 6.0f;
+        Billboard b;
+        BillboardDesc& d = b.d;
+        d.textureIndex = 56;
+        d.lifeTimeMs = 0;
+        d.scaleX = d.scaleY = d.scaleZ = 0.5f;
+        d.fade = 0;
+        d.lookCam = 1;
+        d.x = m_x + cosf(ang) * 0.8f;
+        d.y = m_y + 0.5f + sinf(ang * 2.0f) * 0.3f;
+        d.z = m_z + sinf(ang) * 0.8f;
+        d.bgra = m_bgra;
+        b.createMs = StartTime();
+        b.curBgra = m_bgra;
+        BillboardFrameMove(b, m_nowMs, ctx.camYawH, ctx.camPitchV, (uint32_t)i);
+        ctx.fx->Emit(BillboardToQuad(b, 1));
+    }
+}
+
 } // namespace tmx

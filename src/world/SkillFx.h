@@ -99,4 +99,65 @@ void SkillMeshTypeAnim(int type, float progress, float baseScaleH, float baseSca
 // TMShade fade curve: fi=1 -> |sin(progress*pi)|, fi=0 -> |cos(progress*pi/2)|.
 float DecalFade(float progress, int fi);
 
+// TMArrow-lite (doc 19 §7): a projectile traveling start -> target, emitting a
+// trail billboard each frame and spawning an impact composition on arrival.
+// impactTex/mesh/decal drive the landing burst (mesh ring + ground lightmap +
+// splash burst). type=152 arc adds a sine hop on Y.
+struct ProjectileDesc {
+    float startX, startY, startZ;
+    float targetX, targetY, targetZ;
+    int   trailTex = 0;        // trail billboard texture (effect index)
+    uint32_t trailBgra = 0xFFAAAAEE;
+    int   impactMeshIndex = -1;   // -1 = no mesh ring
+    int   impactTexIndex  = 229;  // mesh texture override
+    int   impactDecalTex  = 118;  // ground lightmap texture
+    uint32_t impactBgra = 0x80FFFFFF;
+    int   splashCount = 10;
+    float splashRadius = 1.0f;
+    bool  arc = false;         // type 152 hop
+};
+class Projectile : public SkillEffect {
+public:
+    Projectile(const ProjectileDesc& d);
+    bool FrameMove(uint32_t nowMs, const SkillCtx& ctx) override;
+    void Render(const SkillCtx& ctx) override;
+private:
+    void SpawnImpact(uint32_t nowMs, const SkillCtx& ctx);
+    ProjectileDesc m_d;
+    D3DXVECTOR3 m_cur;
+    float m_progress = 0.0f;
+    uint32_t m_life = 1;
+    bool m_impacted = false;
+};
+
+// TMSkillMeteorStorm-lite (doc 19 §8): rains `strikes` impacts scattered
+// around the target over the lifetime. Each strike = a falling glow + an
+// impact burst (fire billboard ring + ground lightmap). EF_BRIGHT orange.
+class MeteorStorm : public SkillEffect {
+public:
+    MeteorStorm(float x, float y, float z, int level, uint32_t nowMs);
+    bool FrameMove(uint32_t nowMs, const SkillCtx& ctx) override;
+private:
+    float m_x, m_y, m_z;
+    int m_level;
+    int m_strikes;
+    int m_nextStrike = 0;
+    uint32_t m_life;
+    uint32_t m_perStrike;
+};
+
+// TMSkillMagicShield-lite (doc 19 §8 buff): a persistent orbiting glow around a
+// world position. Stays until its lifetime (buffs set a long life / are
+// toggled). Renders a rotating ring of billboards.
+class MagicShield : public SkillEffect {
+public:
+    MagicShield(float x, float y, float z, uint32_t lifeMs, uint32_t bgra);
+    bool FrameMove(uint32_t nowMs, const SkillCtx& ctx) override;
+    void Render(const SkillCtx& ctx) override;
+private:
+    float m_x, m_y, m_z;
+    uint32_t m_life, m_bgra;
+    uint32_t m_nowMs = 0;
+};
+
 } // namespace tmx

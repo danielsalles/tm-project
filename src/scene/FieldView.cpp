@@ -403,6 +403,7 @@ void FieldView::Render(GLRenderDevice& device) {
     m_skillCtx.terrain    = m_hasTerrain ? &m_terrain : nullptr;
     m_skillCtx.skillMesh  = &m_skillMeshR;
     m_skillCtx.decal      = &m_decalR;
+    m_skillCtx.host       = &m_skills;
     m_skillCtx.camYawH    = m_fxFrame.yawH;
     m_skillCtx.camPitchV  = m_fxFrame.pitchV;
     m_skillCtx.screenW    = m_fxFrame.screenW;

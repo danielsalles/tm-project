@@ -110,6 +110,8 @@ int main(int argc, char** argv) {
     struct SkillReq { char name[24]; float x, z; int level; };
     std::vector<SkillReq> skillReqs;
     bool swingLoop = false;
+    float arrowStart[2] = {0,0}, arrowTarget[2] = {0,0};
+    bool arrowSet = false;
     for (int i = 1; i < argc; ++i) {
         if (!strcmp(argv[i], "--shot") && i + 1 < argc)
             shotPath = argv[++i];
@@ -162,6 +164,16 @@ int main(int argc, char** argv) {
             tok = strtok(nullptr, ",");  if (tok) r.z = (float)atof(tok);
             tok = strtok(nullptr, ",");  if (tok) r.level = atoi(tok);
             skillReqs.push_back(r);
+        }
+        else if (!strcmp(argv[i], "--arrow") && i + 4 < argc) {
+            SkillReq r; snprintf(r.name, sizeof r.name, "arrow");
+            r.x = 0; r.z = 0; r.level = 0;
+            // arrow sx,sz,tx,tz — store start in x,z and target in a parallel vec
+            arrowStart[0] = (float)atof(argv[++i]);
+            arrowStart[1] = (float)atof(argv[++i]);
+            arrowTarget[0] = (float)atof(argv[++i]);
+            arrowTarget[1] = (float)atof(argv[++i]);
+            arrowSet = true;
         }
         else if (!strcmp(argv[i], "--swing"))
             swingLoop = true;
@@ -676,8 +688,6 @@ int main(int argc, char** argv) {
                     view.AddSkillEffect(std::make_unique<tmx::SkillBurst>(
                         r.x, y, r.z, 8, 700, 10, 1.2f, 0.6f, 0xFFFFAA00));
                 } else if (!strcmp(r.name, "bash")) {
-                    // TMSkillBash-lite: center glow + splash ring (fire tex 11,
-                    // 0xFF111105 in the original) every ~250ms for the lifetime.
                     view.AddSkillEffect(std::make_unique<tmx::SkillGlow>(
                         r.x, y, r.z, 11, 700, 0.9f, 0xFF111105));
                     view.AddSkillEffect(std::make_unique<tmx::SkillBurst>(
@@ -688,15 +698,32 @@ int main(int argc, char** argv) {
                     view.AddSkillEffect(std::make_unique<tmx::SkillBurst>(
                         r.x, y, r.z, 56, 1200, 14, 0.8f, 0.5f, 0xFF22AA22));
                 } else if (!strcmp(r.name, "meteor")) {
-                    // TMSkillMeteorStorm-lite: orange ground glow + wide burst
-                    // (tex 11 fire / 71 ash in the original L4+ splash).
+                    view.AddSkillEffect(std::make_unique<tmx::MeteorStorm>(
+                        r.x, y, r.z, r.level, nowMs));
+                } else if (!strcmp(r.name, "shield")) {
+                    view.AddSkillEffect(std::make_unique<tmx::MagicShield>(
+                        r.x, y, r.z, 4000, 0xFF55AAFF));
+                } else if (!strcmp(r.name, "fire")) {
                     view.AddSkillEffect(std::make_unique<tmx::SkillGlow>(
-                        r.x, y, r.z, 11, 900, 1.3f, 0xFFFF7711));
-                    view.AddSkillEffect(std::make_unique<tmx::SkillBurst>(
-                        r.x, y, r.z, 11, 900, 18, 2.0f * r.level, 0.7f, 0xFFAA3300));
+                        r.x, y, r.z, 11, 1500, 1.0f, 0xFFAA3300));
+                    if (terr) {
+                        tmx::GroundDecalDesc dd; dd.gridNum = 5; dd.textureIndex = 7;
+                        dd.bgra = 0xFFFF5500; dd.blend = 1; dd.lifeTime = 1500;
+                        view.AddSkillEffect(MakeSkillEffect<tmx::GroundDecalFx>(
+                            nowMs, r.x, r.z, dd));
+                    }
                 } else {
-                    tmx::Log("--skill '%s' desconhecido (use glow/burst/bash/heal/meteor)", r.name);
+                    tmx::Log("--skill '%s' desconhecido (glow/burst/bash/heal/meteor/shield/fire)", r.name);
                 }
+            }
+            if (arrowSet && terr) {
+                tmx::ProjectileDesc pd;
+                pd.startX = arrowStart[0]; pd.startZ = arrowStart[1];
+                pd.startY = tmx::TerrainGetHeight(*terr, arrowStart[0], arrowStart[1]);
+                pd.targetX = arrowTarget[0]; pd.targetZ = arrowTarget[1];
+                pd.targetY = tmx::TerrainGetHeight(*terr, arrowTarget[0], arrowTarget[1]);
+                pd.trailTex = 0; pd.impactMeshIndex = -1; pd.impactDecalTex = 118;
+                view.AddSkillEffect(MakeSkillEffect<tmx::Projectile>(nowMs, pd));
             }
         }
 
