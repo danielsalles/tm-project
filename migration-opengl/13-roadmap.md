@@ -36,14 +36,19 @@ são partículas de folha caindo → Fase 4.
 
 **Saída**: andar pelo campo com câmera, dia/noite, clima. Sem personagens ainda.
 
-## Fase 3 — Personagens (2 semanas)
+## Fase 3 — Personagens (2 semanas) ✅ (plano/retrospectiva: `17-fase3-personagens.md`)
 
-13. Loaders `.msh/.bon/.ani` + árvore CFrame (cinemática inalterada) — 06.
-14. `skinned.vert` (4 variantes) + UBO de ossos + armas na mão — 06 §6.3.
-15. Outline de mouse-over (2º passe) — `CMesh.cpp:665-754`.
-16. TMHuman completo: montaria, capa, crossfade de animação.
+13. Multi-`.ani` por tipo + cuts + `m_sAnimationArray` (ch01/ch02 com slerp) — MeshManager.cpp:95-270.
+14. Looks (8 partes, armas skinned) + exceções; MAX_BONES 64 (ch01 tem 47 ossos).
+15. Character runtime: rota (BASE_GetRoute), altura de terreno, câmera follow, click-to-move.
+16. NPCs/monstros de demo (or01/wb01) + presets das 4 classes.
 
-**Saída**: personagem jogável, NPCs, monstros animados.
+Notas do estudo (doc 17 §7): **não existe blob shadow** neste client (sh01 é legado;
+`m_pShadow` é billboard de stealth) — item 11 da Fase 2 cancelado; armas de humanos
+são partes skinned (não há attach de .msa em bone); outline de mouse-over e montaria/
+mantua → Fase 4/5.
+
+**Saída**: personagem jogável (click-to-move), NPCs, monstros animados.
 
 ## Fase 4 — Efeitos (2-3 semanas)
 

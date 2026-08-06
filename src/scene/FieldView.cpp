@@ -318,15 +318,71 @@ void FieldView::Render(GLRenderDevice& device) {
 
     // Animated trees (skinned) — alpha-tested opaque, anywhere in the opaque pass.
     m_trees.Render(device, m_lastTimeMs);
+
+    // Characters (phase 3): same skin pipeline state as trees.
+    if (m_charReady && !m_chars.empty()) {
+        m_charPipe.Begin(device, 170.0f);
+        const uint32_t nowMs = (uint32_t)m_lastTimeMs;
+        for (auto& c : m_chars)
+            c->Render(m_charPipe, device, nowMs);
+    }
 }
 
 void FieldView::FrameMove(float timeSec) {
     for (auto& sea : m_seas)
         sea.FrameMove(timeSec);
     m_lastTimeMs = timeSec * 1000.0f;
+    for (auto& c : m_chars)
+        c->FrameMove((uint32_t)m_lastTimeMs);
+}
+
+bool FieldView::InitCharacters(const std::string& boneAniListTxt,
+                               const std::string& aniSoundTxt,
+                               GLTextureManager& textures, std::string* err) {
+    if (!ParseAniSound(aniSoundTxt, m_aniSound, err))
+        return false;
+    if (!m_charCache.Init(boneAniListTxt, err))
+        return false;
+    if (!m_charPipe.Init(err))
+        return false;
+    m_charReady = true;
+    return true;
+}
+
+Character* FieldView::Spawn(const CharDesc& d, float x, float z, std::string* err) {
+    if (!m_charReady || !m_hasTerrain) {
+        if (err) *err = "spawn: characters or terrain not ready";
+        return nullptr;
+    }
+    auto c = std::make_unique<Character>();
+    if (!c->Init(m_charCache, *m_textures, m_aniSound, d,
+                 &m_terrain.mask[0][0], TerrainData::kMask, TerrainData::kMask,
+                 m_terrain.OffsetX(), m_terrain.OffsetY(), err))
+        return nullptr;
+    c->SetPosition(x, z);
+    c->SetMotion(CharMotion::Stand01, (uint32_t)m_lastTimeMs);
+    Log("spawn type=%d @(%.1f,%.1f): %d parts", d.boneAniIndex, x, z,
+        c->Mesh().PartCount());
+    Character* ptr = c.get();
+    m_chars.push_back(std::move(c));
+    return ptr;
+}
+
+void FieldView::RemoveCharacter(Character* c) {
+    for (size_t i = 0; i < m_chars.size(); ++i) {
+        if (m_chars[i].get() == c) {
+            m_chars[i]->Destroy();
+            m_chars.erase(m_chars.begin() + i);
+            return;
+        }
+    }
 }
 
 void FieldView::Destroy() {
+    for (auto& c : m_chars)
+        c->Destroy();
+    m_chars.clear();
+    m_charPipe.Destroy();
     m_terrainRenderer.Destroy();
     m_seaShader.Destroy();
     m_trees.Destroy();

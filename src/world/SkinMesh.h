@@ -9,6 +9,10 @@
 
 namespace tmx {
 
+// Max bone palette entries per .msh part. ch01.bon (humans) has 47 bones; the
+// original allows up to 100 frames (TMSkinMesh.h MAX_FRAME_TO_ANIMATE).
+constexpr uint32_t kMaxBones = 64;
+
 // CPU-side mirror of a .msh skinned mesh part (CMesh::RestoreDeviceObjects,
 // CMesh.cpp:814-910). Validated byte-exact against mesh/tr010101.msh.
 //
@@ -54,8 +58,8 @@ struct GLSkinMesh {
     int indexCount = 0;
     uint32_t numInfluence = 0;
     uint32_t numPalette = 0;
-    D3DXMATRIX boneBindInv[40];
-    uint32_t boneFrameId[40];
+    D3DXMATRIX boneBindInv[kMaxBones];
+    uint32_t boneFrameId[kMaxBones];
 
     bool Upload(const MshData& data);
     void Destroy();

@@ -27,8 +27,8 @@ bool ParseMsh(const uint8_t* data, size_t size, MshData& out, std::string* err) 
 
     if (out.numInfluence < 1 || out.numInfluence > 4)
         return fail("msh: numFaceInflunce outside 1..4");
-    if (out.numPalette > 40)
-        return fail("msh: palette over 40");
+    if (out.numPalette > kMaxBones)
+        return fail("msh: palette over kMaxBones");
 
     // The declared stride must match the layout table (VertexDecl1-4).
     const uint32_t expectStride = 36 + 4 * (out.numInfluence - 1);

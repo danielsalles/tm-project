@@ -11,7 +11,7 @@ layout(location=6) in uvec4 aBones;
 uniform int uNumInfluence;   // 1..4
 
 layout(std140) uniform BonePalette {
-    mat4 uBones[40];
+    mat4 uBones[64];
 };
 
 out vec2 vUV;
