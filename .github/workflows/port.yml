@@ -33,10 +33,10 @@ jobs:
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DTM_BUILD_TESTS=ON
 
       - name: build
-        run: cmake --build build -j
+        run: cmake --build build -j --config Release
 
       - name: test
-        run: ctest --test-dir build --output-on-failure
+        run: ctest --test-dir build -C Release --output-on-failure
 
       - name: boot report (artifact)
         if: always()
@@ -51,6 +51,8 @@ jobs:
     if: github.event_name == 'workflow_dispatch'
     steps:
       - uses: actions/checkout@v4
+
+      - uses: ilammy/msvc-dev-cmd@v1
 
       - name: compile generator (MSVC + D3DX9 real)
         run: |
