@@ -248,6 +248,10 @@ bool FieldView::InitGL(std::string* err) {
         return false;
     if (!m_fx.Init(err))
         return false;
+    if (!m_skillMeshR.Init(err))
+        return false;
+    if (!m_decalR.Init(err))
+        return false;
     if (m_hasTerrain && !m_terrainRenderer.Build(m_terrain, err))
         return false;
     if (!m_seaShader.Build(kCommonGlsl, kSeaVert, kSeaFrag, err))
@@ -397,6 +401,8 @@ void FieldView::Render(GLRenderDevice& device) {
     m_skillCtx.skin       = m_charReady ? &m_charPipe : nullptr;
     m_skillCtx.charCache  = m_charReady ? &m_charCache : nullptr;
     m_skillCtx.terrain    = m_hasTerrain ? &m_terrain : nullptr;
+    m_skillCtx.skillMesh  = &m_skillMeshR;
+    m_skillCtx.decal      = &m_decalR;
     m_skillCtx.camYawH    = m_fxFrame.yawH;
     m_skillCtx.camPitchV  = m_fxFrame.pitchV;
     m_skillCtx.screenW    = m_fxFrame.screenW;
@@ -516,6 +522,8 @@ void FieldView::Destroy() {
     m_chars.clear();
     m_charPipe.Destroy();
     m_fx.Destroy();
+    m_skillMeshR.Destroy();
+    m_decalR.Destroy();
     m_terrainRenderer.Destroy();
     m_seaShader.Destroy();
     m_trees.Destroy();

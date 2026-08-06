@@ -14,6 +14,8 @@ struct GLMesh;
 struct TerrainData;
 class SkinPipeline;
 class CharacterAnimationCache;
+class SkillMeshRenderer;
+class GroundDecalRenderer;
 
 // Per-frame context handed to every SkillEffect. FieldView fills it before the
 // container ticks/renders. Skill effects draw meshes via device.DrawMesh, emit
@@ -26,6 +28,8 @@ struct SkillCtx {
     SkinPipeline*          skin     = nullptr;   // skinned skill meshes (may be null)
     CharacterAnimationCache* charCache = nullptr;
     const TerrainData*     terrain  = nullptr;
+    SkillMeshRenderer*     skillMesh = nullptr;   // TMEffectMesh path (phase 5)
+    GroundDecalRenderer*   decal     = nullptr;   // TMShade path (phase 5)
 
     // Camera frame (mirrors FieldView::FxFrameInfo) for billboarding/cull.
     float camYawH = 0, camPitchV = 0;

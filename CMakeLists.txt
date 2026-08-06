@@ -65,7 +65,11 @@ set(TM_SHADER_FILES
   ${CMAKE_SOURCE_DIR}/src/gl/shaders/skin.vert
   ${CMAKE_SOURCE_DIR}/src/gl/shaders/skin.frag
   ${CMAKE_SOURCE_DIR}/src/gl/shaders/fx_quad.vert
-  ${CMAKE_SOURCE_DIR}/src/gl/shaders/fx_quad.frag)
+  ${CMAKE_SOURCE_DIR}/src/gl/shaders/fx_quad.frag
+  ${CMAKE_SOURCE_DIR}/src/gl/shaders/fx_skillmesh.vert
+  ${CMAKE_SOURCE_DIR}/src/gl/shaders/fx_skillmesh.frag
+  ${CMAKE_SOURCE_DIR}/src/gl/shaders/fx_decal.vert
+  ${CMAKE_SOURCE_DIR}/src/gl/shaders/fx_decal.frag)
 set(TM_SHADERS_H ${CMAKE_BINARY_DIR}/generated/shaders_embedded.h)
 add_custom_command(
   OUTPUT ${TM_SHADERS_H}
@@ -85,6 +89,8 @@ add_library(tmgl STATIC
   src/gl/GLTexture.cpp
   src/gl/SkinPipeline.cpp
   src/gl/EffectRenderer.cpp
+  src/gl/SkillMeshRenderer.cpp
+  src/gl/GroundDecalRenderer.cpp
   src/world/TerrainData.cpp
   src/world/TerrainRenderer.cpp
   src/world/SkyDome.cpp

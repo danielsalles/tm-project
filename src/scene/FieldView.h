@@ -4,6 +4,8 @@
 #include "gl/GLTexture.h"
 #include "gl/EffectRenderer.h"
 #include "gl/SkinPipeline.h"
+#include "gl/SkillMeshRenderer.h"
+#include "gl/GroundDecalRenderer.h"
 #include "scene/ObjectFile.h"
 #include "world/AniSound.h"
 #include "world/Billboard.h"
@@ -39,7 +41,6 @@ public:
 
     // GL objects (terrain shader/buffers) — call with a live context.
     bool InitGL(std::string* err);
-
     void Render(GLRenderDevice& device);
     void Destroy();
 
@@ -148,6 +149,8 @@ private:
     // Phase 5 combat/skill effects.
     EffectContainer m_skills;
     SkillCtx        m_skillCtx;
+    SkillMeshRenderer   m_skillMeshR;
+    GroundDecalRenderer m_decalR;
 
     float m_lastTimeMs = 0.0f;
     float m_bmin[3] = { 0, 0, 0 };
