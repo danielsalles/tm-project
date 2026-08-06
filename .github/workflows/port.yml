@@ -27,7 +27,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libx11-dev libxext-dev libwayland-dev \
-            libxkbcommon-dev wayland-protocols libegl1-mesa-dev
+            libxkbcommon-dev wayland-protocols libegl1-mesa-dev \
+            xvfb mesa-utils libgl1-mesa-dri
 
       - name: configure
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DTM_BUILD_TESTS=ON
@@ -35,8 +36,15 @@ jobs:
       - name: build
         run: cmake --build build -j --config Release
 
+      # GL runtime test skipped on Windows runners (no GL>1.1 — glsmoke self-skips).
+      # Linux roda via xvfb com Mesa llvmpipe (suporta GL 4.1+).
       - name: test
         run: ctest --test-dir build -C Release --output-on-failure
+        if: runner.os != 'Linux'
+
+      - name: test (linux, xvfb)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a ctest --test-dir build -C Release --output-on-failure
 
       - name: boot report (artifact)
         if: always()

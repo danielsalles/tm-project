@@ -54,6 +54,7 @@ O cliente **não** é fixed-function puro, como aparenta. A realidade:
 | `12-modernizacoes.md` | Onde ganhar performance e qualidade visual |
 | `13-roadmap.md` | Fases ordenadas, critérios de validação, riscos |
 | `14-fase0-fundacao.md` | Plano completo da Fase 0: CMake, CI, shim D3DX, testes dourados |
+| `15-fase1-primeira-cena.md` | Plano completo da Fase 1: GLRenderDevice, loaders .wys/.msa, cena select-server |
 
 ## Stack recomendada
 

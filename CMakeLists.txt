@@ -51,9 +51,39 @@ target_compile_options(tmcore PRIVATE
   $<$<CXX_COMPILER_ID:Clang,AppleClang,GNU>:-Wall -Wextra>
   $<$<CXX_COMPILER_ID:MSVC>:/W3>)
 
+# --- shaders GLSL embedded (regenerado quando um .glsl muda) ---
+set(TM_SHADER_FILES
+  ${CMAKE_SOURCE_DIR}/src/gl/shaders/common.glsl
+  ${CMAKE_SOURCE_DIR}/src/gl/shaders/mesh_lit.vert
+  ${CMAKE_SOURCE_DIR}/src/gl/shaders/mesh_lit.frag)
+set(TM_SHADERS_H ${CMAKE_BINARY_DIR}/generated/shaders_embedded.h)
+add_custom_command(
+  OUTPUT ${TM_SHADERS_H}
+  COMMAND ${CMAKE_COMMAND} "-DOUTPUT=${TM_SHADERS_H}"
+          "-DFILES_DIR=${CMAKE_SOURCE_DIR}/src/gl/shaders"
+          -P ${CMAKE_SOURCE_DIR}/cmake/EmbedShaders.cmake
+  DEPENDS ${TM_SHADER_FILES} ${CMAKE_SOURCE_DIR}/cmake/EmbedShaders.cmake
+  COMMENT "Embedding GLSL shaders")
+
+# --- tmgl: renderer + loaders + cena (fase 1) ---
+add_library(tmgl STATIC
+  ${TM_SHADERS_H}
+  src/gl/GLShader.cpp
+  src/gl/GLStateCache.cpp
+  src/gl/GLRenderDevice.cpp
+  src/gl/GLMesh.cpp
+  src/gl/GLTexture.cpp
+  src/scene/ObjectFile.cpp
+  src/scene/SelectServerView.cpp)
+target_include_directories(tmgl PUBLIC src ${CMAKE_BINARY_DIR}/generated)
+target_link_libraries(tmgl PUBLIC tmcore glad stb)
+target_compile_options(tmgl PRIVATE
+  $<$<CXX_COMPILER_ID:Clang,AppleClang,GNU>:-Wall -Wextra>
+  $<$<CXX_COMPILER_ID:MSVC>:/W3>)
+
 # --- executável ---
 add_executable(TMProject src/platform/main.cpp)
-target_link_libraries(TMProject PRIVATE tmcore glad glm::glm stb)
+target_link_libraries(TMProject PRIVATE tmcore tmgl glad glm::glm stb)
 
 # --- testes ---
 if(TM_BUILD_TESTS)
