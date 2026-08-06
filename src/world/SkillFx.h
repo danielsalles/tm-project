@@ -160,4 +160,26 @@ private:
     uint32_t m_nowMs = 0;
 };
 
+// TMHuman::RenderEffect x15 (doc 19 §10): per-monster-class ambient billboard
+// spawns (Khepra sand, dragon embers, golem dust, ...) anchored near the
+// character. Table-driven; each class maps to a texture/color/interval. The
+// effect stays attached for its lifetime (or forever when lifeMs=0) and emits
+// billboards into ctx.fx each interval.
+class Character;
+class MonsterAmbient : public SkillEffect {
+public:
+    MonsterAmbient(Character* c, int monsterClass, uint32_t lifeMs);
+    bool FrameMove(uint32_t nowMs, const SkillCtx& ctx) override;
+    void Render(const SkillCtx& ctx) override { (void)ctx; }
+private:
+    Character* m_char;
+    int m_class;
+    uint32_t m_life, m_lastSpawn;
+    // Per-class recipe (ported from RenderEffect_*: Khepra/BoneDragon/Golem/etc.)
+    int   m_tex;
+    uint32_t m_bgra;
+    uint32_t m_interval;
+    float m_h, m_v;   // particle H/V drift
+};
+
 } // namespace tmx

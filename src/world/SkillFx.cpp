@@ -1,4 +1,5 @@
 #include "world/SkillFx.h"
+#include "world/Character.h"
 #include "gl/EffectRenderer.h"
 #include "gl/SkillMeshRenderer.h"
 #include "gl/GroundDecalRenderer.h"
@@ -402,6 +403,66 @@ void MagicShield::Render(const SkillCtx& ctx) {
         BillboardFrameMove(b, m_nowMs, ctx.camYawH, ctx.camPitchV, (uint32_t)i);
         ctx.fx->Emit(BillboardToQuad(b, 1));
     }
+}
+
+// ---------------------------------------------------------------------------
+// MonsterAmbient (RenderEffect x15)
+// ---------------------------------------------------------------------------
+
+MonsterAmbient::MonsterAmbient(Character* c, int monsterClass, uint32_t lifeMs)
+    : m_char(c), m_class(monsterClass), m_life(lifeMs), m_lastSpawn(0),
+      m_tex(0), m_bgra(0xFFFFFFFF), m_interval(100), m_h(1.0f), m_v(-3.0f) {
+    // Representative subset of TMHuman::RenderEffect_* (doc 19 §10). Each maps
+    // a monster class to its ambient billboard recipe; unknown classes get a
+    // faint default dust.
+    switch (monsterClass) {
+        case 39:  // Khepra — red sand falling
+            m_tex = 0; m_bgra = 0xFFFF7777; m_interval = 100; m_v = -3.0f; break;
+        case 16:  // BoneDragon / EmeraldDragon — embers
+            m_tex = 11; m_bgra = 0xFFAA3300; m_interval = 80; m_v = 1.0f; break;
+        case 32:  // Golem — dust
+            m_tex = 56; m_bgra = 0xFFAA8855; m_interval = 120; m_v = 0.5f; break;
+        case 30:  // Minotauros — puff
+            m_tex = 0; m_bgra = 0xFF886644; m_interval = 100; m_v = -1.0f; break;
+        case 23:  // Hydra — mist
+            m_tex = 60; m_bgra = 0xFF5577AA; m_interval = 150; m_v = 0.8f; break;
+        default:  // generic faint dust
+            m_tex = 56; m_bgra = 0xFF444444; m_interval = 200; m_v = -1.0f; break;
+    }
+}
+
+bool MonsterAmbient::FrameMove(uint32_t nowMs, const SkillCtx& ctx) {
+    if (m_life && nowMs - StartTime() >= m_life)
+        return false;
+    if (!m_char || !ctx.fx)
+        return true;
+    if (nowMs - m_lastSpawn < m_interval)
+        return true;
+    m_lastSpawn = nowMs;
+
+    // Spawn near the character's head/torso (m_vecTempPos[0] approx).
+    const float cx = m_char->X();
+    const float cy = m_char->Height() + 1.0f;
+    const float cz = m_char->Z();
+    const float jx = (float)(rand() % 10 - 5) * 0.06f;
+    const float jz = (float)(rand() % 10 - 5) * 0.06f;
+    Billboard b;
+    BillboardDesc& d = b.d;
+    d.textureIndex = m_tex;
+    d.lifeTimeMs = 1500;
+    d.scaleX = d.scaleY = d.scaleZ = 0.25f;
+    d.fade = 1;
+    d.lookCam = 1;
+    d.cycleCount = 1; d.cycleTimeMs = 80;
+    d.x = cx + jx; d.y = cy; d.z = cz + jz;
+    d.bgra = m_bgra;
+    d.particleH = m_h; d.particleV = m_v;
+    d.motion = (m_v < 0) ? 0 : 1;   // rise or sway
+    b.createMs = nowMs;
+    b.curBgra = m_bgra;
+    BillboardFrameMove(b, nowMs, ctx.camYawH, ctx.camPitchV, 0);
+    ctx.fx->Emit(BillboardToQuad(b, 1));
+    return true;
 }
 
 } // namespace tmx

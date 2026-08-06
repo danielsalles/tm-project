@@ -113,6 +113,7 @@ int main(int argc, char** argv) {
     float arrowStart[2] = {0,0}, arrowTarget[2] = {0,0};
     bool arrowSet = false;
     int mountType = -1;
+    int monsterClass = -1;
     for (int i = 1; i < argc; ++i) {
         if (!strcmp(argv[i], "--shot") && i + 1 < argc)
             shotPath = argv[++i];
@@ -180,6 +181,8 @@ int main(int argc, char** argv) {
             swingLoop = true;
         else if (!strcmp(argv[i], "--mount") && i + 1 < argc)
             mountType = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--class") && i + 1 < argc)
+            monsterClass = atoi(argv[++i]);
     }
 
     if (!SDL_Init(SDL_INIT_VIDEO)) {
@@ -738,6 +741,15 @@ int main(int argc, char** argv) {
             if (!myChar->SetMount(view.CharCache(), textures, mountType,
                                   SDL_GetTicks(), &mErr))
                 tmx::Log("--mount falhou: %s", mErr.c_str());
+        }
+
+        // Phase 5 monster ambient (doc 19 §10, RenderEffect x15): attach a
+        // per-class ambient billboard spawner to the focused char.
+        static bool ambientSpawned = false;
+        if (!ambientSpawned && monsterClass >= 0 && myChar && sceneLoaded) {
+            ambientSpawned = true;
+            view.AddSkillEffect(std::make_unique<tmx::MonsterAmbient>(
+                myChar, monsterClass, 0 /*forever*/));
         }
 
         // Phase 5 weapon trail demo (--swing): loop attacks on the focused char,
