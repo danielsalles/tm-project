@@ -63,7 +63,9 @@ set(TM_SHADER_FILES
   ${CMAKE_SOURCE_DIR}/src/gl/shaders/sea.vert
   ${CMAKE_SOURCE_DIR}/src/gl/shaders/sea.frag
   ${CMAKE_SOURCE_DIR}/src/gl/shaders/skin.vert
-  ${CMAKE_SOURCE_DIR}/src/gl/shaders/skin.frag)
+  ${CMAKE_SOURCE_DIR}/src/gl/shaders/skin.frag
+  ${CMAKE_SOURCE_DIR}/src/gl/shaders/fx_quad.vert
+  ${CMAKE_SOURCE_DIR}/src/gl/shaders/fx_quad.frag)
 set(TM_SHADERS_H ${CMAKE_BINARY_DIR}/generated/shaders_embedded.h)
 add_custom_command(
   OUTPUT ${TM_SHADERS_H}
@@ -82,6 +84,7 @@ add_library(tmgl STATIC
   src/gl/GLMesh.cpp
   src/gl/GLTexture.cpp
   src/gl/SkinPipeline.cpp
+  src/gl/EffectRenderer.cpp
   src/world/TerrainData.cpp
   src/world/TerrainRenderer.cpp
   src/world/SkyDome.cpp
@@ -93,6 +96,11 @@ add_library(tmgl STATIC
   src/world/CharacterMesh.cpp
   src/world/Route.cpp
   src/world/Character.cpp
+  src/world/Billboard.cpp
+  src/world/LampFx.cpp
+  src/world/SunFlare.cpp
+  src/world/WeatherFx.cpp
+  src/world/Critter.cpp
   src/world/BoneAnimation.cpp
   src/world/TreeRenderer.cpp
   src/scene/ObjectFile.cpp

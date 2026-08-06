@@ -8,9 +8,13 @@ out vec4 fragColor;
 uniform sampler2D uTex0;
 uniform float uAlphaRef;
 uniform bool  uAlphaTest;
+uniform float uAlphaMul;   // per-instance material alpha (leaf distance fade)
+uniform vec3  uEmissiveAdd; // mouse-over highlight (emissive swap)
 
 void main() {
     vec4 c = texture(uTex0, vUV) * vColor;
+    c.rgb += uEmissiveAdd;
+    c.a *= uAlphaMul;
     if (uAlphaTest && c.a * 255.0 < uAlphaRef)
         discard;
     c.rgb = mix(uFogColor.rgb, c.rgb, FogFactor(vFogDepth));

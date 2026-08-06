@@ -185,7 +185,8 @@ void CharacterMesh::Render(SkinPipeline& pipe, GLRenderDevice& device,
         return;
     SampleCharacter(*m_anim, m_pose, pb, nowMs, world);
     for (size_t i = 0; i < m_parts.size(); ++i)
-        pipe.DrawPart(device, m_parts[i], m_textures[i], m_pose.combined, world);
+        pipe.DrawPart(device, m_parts[i], m_textures[i], m_pose.combined, world,
+                      alphaMul, emissiveAdd);
 }
 
 void CharacterMesh::Destroy() {

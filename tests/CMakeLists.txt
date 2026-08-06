@@ -14,7 +14,13 @@ add_executable(tm_tests
   test_charani.cpp
   test_look.cpp
   test_route.cpp
-  test_character.cpp)
+  test_character.cpp
+  test_fxbillboard.cpp
+  test_fxlamp.cpp
+  test_sunflare.cpp
+  test_weatherfx.cpp
+  test_critter.cpp
+  test_charpick.cpp)
 target_link_libraries(tm_tests PRIVATE tmcore tmgl)
 
 # dados dourados acessíveis por path relativo ao diretório do teste
@@ -41,4 +47,10 @@ add_test(NAME charani    COMMAND tm_tests charani)
 add_test(NAME look       COMMAND tm_tests look)
 add_test(NAME route      COMMAND tm_tests route)
 add_test(NAME character  COMMAND tm_tests character)
+add_test(NAME fxbillboard COMMAND tm_tests fxbillboard)
+add_test(NAME fxlamp     COMMAND tm_tests fxlamp)
+add_test(NAME sunflare   COMMAND tm_tests sunflare)
+add_test(NAME weatherfx  COMMAND tm_tests weatherfx)
+add_test(NAME critter    COMMAND tm_tests critter)
+add_test(NAME charpick   COMMAND tm_tests charpick)
 add_test(NAME glsmoke    COMMAND tm_glsmoke)

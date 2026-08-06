@@ -62,12 +62,15 @@ public:
     int CutCount() const { return m_anim ? m_anim->numCuts : 0; }
     const CharacterAnimation* Anim() const { return m_anim; }
     int PartCount() const { return (int)m_parts.size(); }
+    unsigned int DebugTexture0() const { return m_textures.empty() ? 0u : m_textures[0]; }
 
     // Samples the pose at nowMs and draws every part.
     void Render(SkinPipeline& pipe, GLRenderDevice& device, const D3DXMATRIX& world,
                 uint32_t nowMs);
 
     CharPlayback pb;
+    float alphaMul = 1.0f;   // leaf distance fade (TMLeaf)
+    float emissiveAdd[3] = { 0.0f, 0.0f, 0.0f };  // mouse-over highlight
 
 private:
     const CharacterAnimation* m_anim = nullptr;  // cache-owned

@@ -50,14 +50,21 @@ mantua → Fase 4/5.
 
 **Saída**: personagem jogável (click-to-move), NPCs, monstros animados.
 
-## Fase 4 — Efeitos (2-3 semanas)
+## Fase 4 — Efeitos (2-3 semanas) ✅ (plano/retrospectiva: `18-fase4-efeitos.md`)
 
-17. QuadBatchRenderer + blend modes + flipbook (bind por textura na 1ª versão) — 08.
-18. Portar efeitos por categoria (tabela 08 §8.3), dos triviais aos difíceis.
-19. TrailRenderer (SWSwing) por último.
-20. Clima (chuva/neve instanciados), TMShade, TMFont3 (dano).
+17. EffectRenderer (batch de quads, flipbook por índice consecutivo, blends
+    EF_BRIGHT/EF_DEFAULT) + sim de billboard bit-fiel (fades/motions/scaleVel).
+18. Efeitos do viewer sem combate: glows de lâmpada 501-505, sol+lens flare
+    (TMSun), chuva/neve (TMRain/TMSnow), folhas/borboletas/peixes (skinmesh
+    61/69/24/70 via cache da Fase 3), highlight de mouse-over + pick box.
+19. SWSwing/TrailRenderer, TMShade/decals, sanc glow, skills → Fase 5 (sem
+    gatilho de combate nesta fase).
 
-**Saída**: combate completo com todas as skills.
+Notas do estudo (doc 18 §11): mouse-over é **emissive verde** no material (não
+existe círculo de seleção neste build); flipbook = índices consecutivos na
+EffectTextureList; fade 2 usa ponteiro como fase (substituir por índice estável).
+
+**Saída**: mundo vivo (fogo, sol, clima, critters) + fundação de efeitos p/ skills.
 
 ## Fase 5 — UI e fontes (2 semanas)
 

@@ -2,15 +2,19 @@
 
 #include "gl/GLMesh.h"
 #include "gl/GLTexture.h"
+#include "gl/EffectRenderer.h"
 #include "gl/SkinPipeline.h"
 #include "scene/ObjectFile.h"
 #include "world/AniSound.h"
+#include "world/Billboard.h"
 #include "world/Character.h"
 #include "world/CharacterMesh.h"
 #include "world/TerrainData.h"
 #include "world/TerrainRenderer.h"
 #include "world/SeaSurface.h"
 #include "world/TreeRenderer.h"
+#include "world/WeatherFx.h"
+#include "world/Critter.h"
 
 #include <memory>
 #include <string>
@@ -65,6 +69,24 @@ public:
     size_t CharacterCount() const { return m_chars.size(); }
     Character* GetCharacter(size_t i) { return i < m_chars.size() ? m_chars[i].get() : nullptr; }
 
+    // Phase 4: effects. Lamp glows are built at Load; FrameMove steps the
+    // billboard sim (call SetFxFrame once per frame with camera/focus info).
+    struct FxFrameInfo {
+        float yawH = 0, pitchV = 0;         // game-convention camera angles
+        int screenW = 0, screenH = 0;
+        float focusX = 0, focusH = 0, focusZ = 0;  // char pos/height (or camera fallback)
+        float right[3] = { 1, 0, 0 };       // view matrix row axes (billboarding)
+        float up[3] = { 0, 1, 0 };
+    };
+    void SetFxFrame(const FxFrameInfo& f) { m_fxFrame = f; }
+    // Weather precipitation: 2 = rain, 3 = snow (anything else = off).
+    void SetWeatherFx(int mode);
+    size_t EffectCount() const { return m_lampFx.size(); }
+
+    // Screen-space/world effect injection (sun flare, weather). Emitted quads
+    // are drawn at the end of Render with the other effects.
+    void EmitScreenFx(const FxQuad& q) { m_fx.Emit(q); }
+
 private:
     struct Object {
         int   meshIndex;
@@ -103,6 +125,18 @@ private:
     SkinPipeline            m_charPipe;
     std::vector<std::unique_ptr<Character>> m_chars;
     bool m_charReady = false;
+
+    // Phase 4 effects (lamp glows 501-505 + weather + future emitters).
+    EffectRenderer       m_fx;
+    std::vector<Billboard> m_lampFx;
+    FxFrameInfo m_fxFrame;
+    WeatherSystem m_rain, m_snow1, m_snow2;
+    int m_weatherFx = -1;
+
+    // Phase 4 critters (leaves/butterflies/fish from the .dat).
+    std::vector<Critter> m_critters;
+    std::vector<std::unique_ptr<CharacterMesh>> m_critterMeshes;
+    bool m_crittersBuilt = false;
 
     float m_lastTimeMs = 0.0f;
     float m_bmin[3] = { 0, 0, 0 };

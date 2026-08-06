@@ -2,6 +2,7 @@
 
 #include "gl/GLRenderDevice.h"
 #include "gl/SkinPipeline.h"
+#include "world/PickSizeTable.h"
 
 #include <cmath>
 #include <cstring>
@@ -219,7 +220,43 @@ void Character::UpdateWorldMatrix() {
     D3DXMatrixMultiply(&m_world, &m_world, &trans);
 }
 
+float Character::PickTest(const float ro[3], const float rd[3]) const {
+    // Cylinder (radius, height) at (m_x, m_height..+h, m_z). 2D ray-circle in XZ
+    // plus a vertical range check at the hit point.
+    const int type = m_desc.boneAniIndex >= 0 && m_desc.boneAniIndex < 100
+        ? m_desc.boneAniIndex : 0;
+    const float radius = kPickSize[type][0];
+    const float height = kPickSize[type][1];
+
+    const float ox = ro[0] - m_x, oz = ro[2] - m_z;
+    const float dx = rd[0], dz = rd[2];
+    const float a = dx * dx + dz * dz;
+    if (a < 1e-8f)
+        return -1.0f;
+    const float b = 2.0f * (ox * dx + oz * dz);
+    const float c = ox * ox + oz * oz - radius * radius;
+    const float disc = b * b - 4.0f * a * c;
+    if (disc < 0.0f)
+        return -1.0f;
+    const float sq = sqrtf(disc);
+    float t = (-b - sq) / (2.0f * a);
+    if (t < 0.0f)
+        t = (-b + sq) / (2.0f * a);
+    if (t < 0.0f)
+        return -1.0f;
+    const float hy = ro[1] + rd[1] * t;
+    if (hy < m_height - 0.2f || hy > m_height + height)
+        return -1.0f;
+    return t;
+}
+
 void Character::Render(SkinPipeline& pipe, GLRenderDevice& device, uint32_t nowMs) {
+    // Mouse-over: the original swaps the material emissive to green
+    // (TMFieldScene m_dwEdgeColor 0x8800FF00). Our hook is the pipeline's
+    // emissive-add uniform.
+    m_mesh.emissiveAdd[0] = 0.0f;
+    m_mesh.emissiveAdd[1] = m_highlight ? 0.55f : 0.0f;
+    m_mesh.emissiveAdd[2] = 0.0f;
     m_mesh.Render(pipe, device, m_world, nowMs);
 }
 
