@@ -80,6 +80,19 @@ TEST(msh, parses_synthetic) {
     EXPECT_EQ(d.OffUV(), 32u);
 }
 
+TEST(msh, high_palette_not_clamped) {
+    // Regression (phase 5 fs01 fish fix): meshes with numPalette > 40 must be
+    // accepted and keep the full palette. The old GLSkinMesh::Upload clamped to
+    // 40, deforming high-bone meshes (fs01, big monsters). The parser must not
+    // reject palettes up to kMaxBones (64).
+    auto blob = BuildMsh(4, 50, 4, 6);
+    MshData d;
+    std::string err;
+    EXPECT_TRUE(tmx::ParseMsh(blob.data(), blob.size(), d, &err));
+    EXPECT_EQ(d.numPalette, 50u);
+    EXPECT_EQ(d.boneFrameId[49], 50u);
+}
+
 TEST(msh, stride_table_matches_vertexdecl) {
     // N=1..4 -> 36/40/44/48 (RenderDevice.cpp VertexDecl1-4)
     for (uint32_t n = 1; n <= 4; ++n) {

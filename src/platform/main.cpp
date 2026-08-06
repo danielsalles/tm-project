@@ -17,6 +17,8 @@
 #include "world/SkyDome.h"
 #include "world/SunFlare.h"
 #include "world/TerrainData.h"
+#include "world/SkillFx.h"
+#include "world/SwingTrail.h"
 
 #include <ctime>
 
@@ -102,6 +104,16 @@ int main(int argc, char** argv) {
     bool walkToSet = false;
     float hoverPx = -1, hoverPy = -1;
     int startWeapon = 0;
+    // Phase 5 combat VFX (doc 19 §13): --skill <name>,x,z[,level]. A small set
+    // of demo effects is wired now (glow/burst/bash/meteor-lite); richer skills
+    // arrive in later steps. Repeating the flag stacks multiple effects.
+    struct SkillReq { char name[24]; float x, z; int level; };
+    std::vector<SkillReq> skillReqs;
+    bool swingLoop = false;
+    float arrowStart[2] = {0,0}, arrowTarget[2] = {0,0};
+    bool arrowSet = false;
+    int mountType = -1;
+    int monsterClass = -1;
     for (int i = 1; i < argc; ++i) {
         if (!strcmp(argv[i], "--shot") && i + 1 < argc)
             shotPath = argv[++i];
@@ -144,6 +156,33 @@ int main(int argc, char** argv) {
             hoverPx = (float)atof(argv[++i]);
             hoverPy = (float)atof(argv[++i]);
         }
+        else if (!strcmp(argv[i], "--skill") && i + 1 < argc) {
+            SkillReq r; r.level = 1; r.x = r.z = 0;
+            char buf[96];
+            snprintf(buf, sizeof buf, "%s", argv[++i]);
+            char* tok = strtok(buf, ",");
+            if (tok) { snprintf(r.name, sizeof r.name, "%s", tok); }
+            tok = strtok(nullptr, ",");  if (tok) r.x = (float)atof(tok);
+            tok = strtok(nullptr, ",");  if (tok) r.z = (float)atof(tok);
+            tok = strtok(nullptr, ",");  if (tok) r.level = atoi(tok);
+            skillReqs.push_back(r);
+        }
+        else if (!strcmp(argv[i], "--arrow") && i + 4 < argc) {
+            SkillReq r; snprintf(r.name, sizeof r.name, "arrow");
+            r.x = 0; r.z = 0; r.level = 0;
+            // arrow sx,sz,tx,tz — store start in x,z and target in a parallel vec
+            arrowStart[0] = (float)atof(argv[++i]);
+            arrowStart[1] = (float)atof(argv[++i]);
+            arrowTarget[0] = (float)atof(argv[++i]);
+            arrowTarget[1] = (float)atof(argv[++i]);
+            arrowSet = true;
+        }
+        else if (!strcmp(argv[i], "--swing"))
+            swingLoop = true;
+        else if (!strcmp(argv[i], "--mount") && i + 1 < argc)
+            mountType = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--class") && i + 1 < argc)
+            monsterClass = atoi(argv[++i]);
     }
 
     if (!SDL_Init(SDL_INIT_VIDEO)) {
@@ -638,6 +677,97 @@ int main(int argc, char** argv) {
         static int frameNo = 0;
         if (walkToSet && myChar && ++frameNo == 3)
             myChar->MoveTo(walkTo[0], walkTo[1], SDL_GetTicks());
+
+        // Phase 5: spawn combat VFX on the 2nd frame (after the scene is live,
+        // skills land in the already-ticked container). Height follows terrain.
+        static bool skillsSpawned = false;
+        if (!skillsSpawned && sceneLoaded) {
+            skillsSpawned = true;
+            const uint32_t nowMs = SDL_GetTicks();
+            const tmx::TerrainData* terr = view.HasTerrain() ? &view.Terrain() : nullptr;
+            for (const auto& r : skillReqs) {
+                const float y = terr ? tmx::TerrainGetHeight(*terr, r.x, r.z) : 0.0f;
+                if (!strcmp(r.name, "glow")) {
+                    view.AddSkillEffect(std::make_unique<tmx::SkillGlow>(
+                        r.x, y, r.z, 56, 700, 0.8f, 0xFFFFFFFF));
+                } else if (!strcmp(r.name, "burst")) {
+                    view.AddSkillEffect(std::make_unique<tmx::SkillBurst>(
+                        r.x, y, r.z, 8, 700, 10, 1.2f, 0.6f, 0xFFFFAA00));
+                } else if (!strcmp(r.name, "bash")) {
+                    view.AddSkillEffect(std::make_unique<tmx::SkillGlow>(
+                        r.x, y, r.z, 11, 700, 0.9f, 0xFF111105));
+                    view.AddSkillEffect(std::make_unique<tmx::SkillBurst>(
+                        r.x, y, r.z, 11, 700, 12, 1.0f, 0.5f, 0xFF332200));
+                } else if (!strcmp(r.name, "heal")) {
+                    view.AddSkillEffect(std::make_unique<tmx::SkillGlow>(
+                        r.x, y, r.z, 56, 1200, 1.1f, 0xFF44FF44));
+                    view.AddSkillEffect(std::make_unique<tmx::SkillBurst>(
+                        r.x, y, r.z, 56, 1200, 14, 0.8f, 0.5f, 0xFF22AA22));
+                } else if (!strcmp(r.name, "meteor")) {
+                    view.AddSkillEffect(std::make_unique<tmx::MeteorStorm>(
+                        r.x, y, r.z, r.level, nowMs));
+                } else if (!strcmp(r.name, "shield")) {
+                    view.AddSkillEffect(std::make_unique<tmx::MagicShield>(
+                        r.x, y, r.z, 4000, 0xFF55AAFF));
+                } else if (!strcmp(r.name, "fire")) {
+                    view.AddSkillEffect(std::make_unique<tmx::SkillGlow>(
+                        r.x, y, r.z, 11, 1500, 1.0f, 0xFFAA3300));
+                    if (terr) {
+                        tmx::GroundDecalDesc dd; dd.gridNum = 5; dd.textureIndex = 7;
+                        dd.bgra = 0xFFFF5500; dd.blend = 1; dd.lifeTime = 1500;
+                        view.AddSkillEffect(MakeSkillEffect<tmx::GroundDecalFx>(
+                            nowMs, r.x, r.z, dd));
+                    }
+                } else {
+                    tmx::Log("--skill '%s' desconhecido (glow/burst/bash/heal/meteor/shield/fire)", r.name);
+                }
+            }
+            if (arrowSet && terr) {
+                tmx::ProjectileDesc pd;
+                pd.startX = arrowStart[0]; pd.startZ = arrowStart[1];
+                pd.startY = tmx::TerrainGetHeight(*terr, arrowStart[0], arrowStart[1]);
+                pd.targetX = arrowTarget[0]; pd.targetZ = arrowTarget[1];
+                pd.targetY = tmx::TerrainGetHeight(*terr, arrowTarget[0], arrowTarget[1]);
+                pd.trailTex = 0; pd.impactMeshIndex = -1; pd.impactDecalTex = 118;
+                view.AddSkillEffect(MakeSkillEffect<tmx::Projectile>(nowMs, pd));
+            }
+        }
+
+        // Phase 5 mount (doc 19 §11): spawn a mount under the focused char.
+        static bool mountSpawned = false;
+        if (!mountSpawned && mountType >= 0 && myChar && sceneLoaded) {
+            mountSpawned = true;
+            std::string mErr;
+            if (!myChar->SetMount(view.CharCache(), textures, mountType,
+                                  SDL_GetTicks(), &mErr))
+                tmx::Log("--mount falhou: %s", mErr.c_str());
+        }
+
+        // Phase 5 monster ambient (doc 19 §10, RenderEffect x15): attach a
+        // per-class ambient billboard spawner to the focused char.
+        static bool ambientSpawned = false;
+        if (!ambientSpawned && monsterClass >= 0 && myChar && sceneLoaded) {
+            ambientSpawned = true;
+            view.AddSkillEffect(std::make_unique<tmx::MonsterAmbient>(
+                myChar, monsterClass, 0 /*forever*/));
+        }
+
+        // Phase 5 weapon trail demo (--swing): loop attacks on the focused char,
+        // driving a SwingTrail ribbon from the right-hand bone.
+        static tmx::SwingTrail* swingFx = nullptr;
+        static uint32_t swingCycle = 0;
+        if (swingLoop && myChar && sceneLoaded) {            const uint32_t nowMs = SDL_GetTicks();
+            if (!swingFx) {
+                auto fx = std::make_unique<tmx::SwingTrail>();
+                swingFx = fx.get();
+                view.AddSkillEffect(std::move(fx));
+            }
+            if (nowMs - swingCycle > 1100) {
+                swingCycle = nowMs;
+                myChar->SetMotion(tmx::CharMotion::Attack01, nowMs);
+                myChar->AttachSwing(swingFx, 0.9f, nowMs, 600);
+            }
+        }
 
         device.BeginFrame();
         {

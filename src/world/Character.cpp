@@ -3,6 +3,8 @@
 #include "gl/GLRenderDevice.h"
 #include "gl/SkinPipeline.h"
 #include "world/PickSizeTable.h"
+#include "world/SwingTrail.h"
+#include "world/HandBoneTable.h"
 
 #include <cmath>
 #include <cstring>
@@ -257,7 +259,43 @@ void Character::Render(SkinPipeline& pipe, GLRenderDevice& device, uint32_t nowM
     m_mesh.emissiveAdd[0] = 0.0f;
     m_mesh.emissiveAdd[1] = m_highlight ? 0.55f : 0.0f;
     m_mesh.emissiveAdd[2] = 0.0f;
+    // Mount renders first (beneath the rider), sharing the character's world.
+    if (m_mount)
+        m_mount->Render(pipe, device, m_world, nowMs);
     m_mesh.Render(pipe, device, m_world, nowMs);
+}
+
+bool Character::SetMount(CharacterAnimationCache& cache, GLTextureManager& textures,
+                         int skinMeshType, uint32_t nowMs, std::string* err) {
+    auto m = std::make_unique<CharacterMesh>();
+    int16_t meshLook[8] = {}, skinLook[8] = {};
+    if (!m->Init(cache, textures, skinMeshType, meshLook, skinLook, err))
+        return false;
+    m->SetCut(0, 40, nowMs);   // mount idle
+    m_mount = std::move(m);
+    SetMotion(CharMotion::Seating, nowMs);   // rider sits
+    return true;
+}
+
+void Character::AttachSwing(SwingTrail* trail, float effectLength, uint32_t nowMs,
+                            uint32_t dur) {
+    if (!trail)
+        return;
+    uint32_t rHand = 0, lHand = 0;
+    GetHandBones(m_desc.boneAniIndex, rHand, lHand);
+    const int boneIdx = (int)(rHand ? rHand : lHand);
+    // Sample the hand bone's world matrix (from the previous frame's pose) and
+    // derive the blade segment: base = hand origin, tip = hand +Z * length.
+    trail->Start(nowMs, dur, [this, boneIdx, effectLength](D3DXVECTOR3& base,
+                                                           D3DXVECTOR3& tip) {
+        D3DXMATRIX m;
+        if (!m_mesh.BoneWorld(boneIdx, &m))
+            return false;
+        D3DXVECTOR3 o(0.0f, 0.0f, 0.0f), z(0.0f, 0.0f, effectLength);
+        D3DXVec3TransformCoord(&base, &o, &m);
+        D3DXVec3TransformCoord(&tip, &z, &m);
+        return true;
+    });
 }
 
 }

@@ -68,6 +68,16 @@ public:
     void Render(SkinPipeline& pipe, GLRenderDevice& device, const D3DXMATRIX& world,
                 uint32_t nowMs);
 
+    // World matrix of bone `idx` from the last sampled pose (valid after the
+    // first Render; one frame of lag when read in FrameMove). Returns false if
+    // the bone index is out of range. Used by SwingTrail to track the weapon.
+    bool BoneWorld(int idx, D3DXMATRIX* out) const {
+        if (idx < 0 || (size_t)idx >= m_pose.combined.size()) return false;
+        *out = m_pose.combined[idx];
+        return true;
+    }
+    int BoneCount() const { return (int)m_pose.combined.size(); }
+
     CharPlayback pb;
     float alphaMul = 1.0f;   // leaf distance fade (TMLeaf)
     float emissiveAdd[3] = { 0.0f, 0.0f, 0.0f };  // mouse-over highlight

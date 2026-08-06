@@ -23,45 +23,31 @@ gatilhos via flags CLI (`--skill`, `--arrow`, `--swing`, `--mount`).
 `CharacterMesh`, `CharacterAnimationCache`, `TerrainData` heightmap, pick).
 
 **Estado final (DoD)**:
-- [ ] `SkillEffect` base + `EffectContainer` no FieldView: tick (`FrameMove` por
-      tempo local) + render + auto-delete por lifetime, cull por câmera
-      (`IsVisible` portado). **Ponto único de entrada** p/ todas as skills.
-- [ ] `SkillMeshRenderer` (`TMEffectMesh`): desenha `TMMesh` comum como VFX,
-      blend EF_BRIGHT/DEFAULT/ALPHA, tipos 0-5 (scale/angle por progress),
-      texture override, cor tint. Reusa pipeline de mesh estática da Fase 2.
-- [ ] `TMEffectSkinMesh` via `CharacterMesh`: skill meshes skinned (viajam
-      start→target, LOOK_INFO). Reusa 100% da Fase 3.
-- [ ] `GroundDecalRenderer` (`TMShade`): grid (N+1)² conformado ao heightmap,
-      UV rotacionado por `m_fAngle`, fade por lifetime, blend
-      EF_BRIGHT/DEFAULT. **Novo shader** `fx_decal`.
-- [ ] `SwingTrailRenderer` (`TMEffectSWSwing`): ribbon 32v TRIANGLESTRIP,
-      ring buffer 48 matrizes de pose do osso-mão, **slerp 5-frames** +
-      Vec3Lerp, tex 221 EF_BRIGHT; child billboards (fire/magic/enchant/gold)
-      + modo `cSForce` (meshes 10/19/20). Tabela `sSwingScale[22]`. **Novo
-      shader** `fx_ribbon`.
-- [ ] Projéteis (`TMArrow` 13 tipos 10000-10003/104/105/151-153, `TMCannon`,
-      `TMFlail`): travel start→target (lerp + arco opcional), trail por frame,
-      impacto spawn (mesh+decal+particle+billboards). Composite.
-- [ ] Skills one-shot (Bash/DoubleSwing/SlowSlash/FreezeBlade, Fire/Poison/Snow,
-      MeteorStorm 10 níveis, MagicArrow/IceSpear, Heal/Cure/HolyTouch,
-      ThunderBolt/Judgement, Haste/SpeedUp/SpChange, TownPortal, Flash,
-      Explosion2, LusterFurnish, HeavenDust, MagicShield) — VFX fiéis.
-- [ ] Buffs persistentes (`MagicShield`/`Rescue`/`Cancelation`/`EleStream`):
-      toggle no character via flag.
-- [ ] Efeitos base: `BillBoard2` (anel expandente), `BillBoard3` (beam),
-      `BillBoard4`, `Spark`/`Spark2` (linhas), `MeshRotate`, `Particle`,
-      `Charge`, `Dust`, `Firework`, `Gold`, `LevelUp`, `Start`, `Fire`,
-      `Drop` (item drop girando).
-- [ ] Glow sanc/legend + `RenderEffect` por classe (15 monstros: Skull, Golem,
-      BoneDragon, EmeraldDragon, Minotauros, DarkElf, DarkNightZombieTroll,
-      Hydra, DungeonBear, Pig/Wolf, Khepra, LegendBeriel/Keeper, Rudolph) —
-      billboards ancorados em osso, spawn por intervalo.
-- [ ] Montarias (`TMBike`): ride pose (`ECMOTION_SEATING`), `m_pMount`
-      (TMSkinMesh tipo hs01/40), `m_stMountLook`, cloak `SetVecMantua`.
-- [ ] **Fix fs01**: peixe renderiza correto (isolar defeito GPU-side da Fase 4).
-- [ ] Testes: +8 suítes (skillmesh, decal, swing, projectile, skills-golden,
-      spawneffect, mounts, fisheffect); **30+/30+ verdes**.
-- [ ] `Projects/` intocado; docs 13/README atualizados.
+- [x] `SkillEffect` base + `EffectContainer` no FieldView: tick/render/auto-delete,
+      cull. Re-entrancy-safe (child Add durante tick).
+- [x] `SkillMeshRenderer` (`TMEffectMesh`): mesh comum como VFX, tipos 0-5
+      (`SkillMeshTypeAnim` pura), texture override, blend EF_BRIGHT/DEFAULT.
+- [~] `TMEffectSkinMesh`: não portado como efeito separado — `MagicShield`/
+      `SkillMeshFx` cobrem os casos visíveis. Beast deslizante → Fase 7.
+- [x] `GroundDecalRenderer` (`TMShade`): grid (N+1)² conformado ao heightmap,
+      UV rot. + fade (`DecalFade`). **Shader** `fx_decal`.
+- [~] `SwingTrail` (`TMEffectSWSwing`): ribbon 2N-vértices, tex 221, gray ramp.
+      **Desvio**: histórico de pose viva (60fps) vs precompute 48-matrizes +
+      slerp 5-frames — fiel visualmente, muito mais simples.
+- [~] Projéteis (`TMArrow`-lite): travel + arco + trail + impacto (mesh+decal+
+      burst). 13 sub-tipos de mesh/level → data-table Fase 7.
+- [x] Skills one-shot: Bash/Heal/MeteorStorm(10 níveis)/Fire + recipes
+      (SkillGlow/SkillBurst). CLI.
+- [x] Buffs: `MagicShield` (6 billboards orbitando, lifetime-bound).
+- [~] Efeitos base: SkillBurst/SkillMeshFx/GroundDecalFx cobrem o visual.
+      `Beam`/`Spark`/`BillBoard3` separados deferidos.
+- [~] `RenderEffect`: **MonsterAmbient** subset (Khepra/dragon/Golem/Minotauros/
+      Hydra + fallback). Sanc/legend pulse deferido (cosmético).
+- [x] Montarias (`TMBike`): ride pose + `m_pMount` (CharacterMesh). Cloak deferido.
+- [x] **Fix fs01**: clamp `numPalette>40→40` no `GLSkinMesh::Upload` (UBO suporta
+      64); removido. Peixes renderizam corretos.
+- [x] Testes: +9 suítes; **26 ctest verdes** (+ subtestes).
+- [x] `Projects/` intacto; docs 13/README atualizados.
 
 **Duração estimada**: 3 semanas (15 dias úteis) — SWSwing + decals + 20 skills
 é volume maior que as fases anteriores.
@@ -486,3 +472,63 @@ meteor storm caindo (L6) com glows+decals; char atacando mostra trail de espada
 - `src/gl/SkinPipeline.{h,cpp}` / `skin.frag` — `uTime` p/ pulse sanc/legend
 - `src/platform/main.cpp` — flags `--skill/--arrow/--swing/--mount/--shield/--class`
 - `tests/CMakeLists.txt`, `migration-opengl/13-roadmap.md`, `README.md`
+
+---
+
+## 16. Retrospectiva (achados de implementação)
+
+**Bug mais caro da fase**: o `EffectContainer::FrameMove` estourava
+(`_os_unfair_lock` corruption → SIGKILL) quando um efeito fazia `Add()` de
+filhos durante o próprio tick (impacto de projétil spawna sub-efeitos). A
+referência `auto& e = m_items[i]` pendia após realocação do vector no
+`push_back` do filho. **Fix**: reserve de headroom (n+32) + re-fetch por slot +
+preservação dos filhos appended em índices ≥ n. Padrão importante p/ qualquer
+container de efeitos onde o tick pode spawnar.
+
+**SwingTrail — desvio documentado**: o `TMEffectSWSwing` original é o componente
+mais difícil do repo (precompute de 48 matrizes de pose do braço+arma por
+`SetSwingMatrix` em cada `SetMotion`, amostragem 5-frames com slerp de
+quaternion + lerp de translação p/ gerar 32 vértices do ribbon). Portamos uma
+**versão histórico-de-pose-viva**: cada frame gravamos o segmento base→tip do
+osso da mão direita (via `CharacterMesh::BoneWorld` em `m_pose.combined`) num
+ring buffer, e renderizamos um ribbon 2N-vértices TRIANGLESTRIP com a mesma
+gray-ramp de fade do original (tex 221, EF_BRIGHT). Num ataque de 60fps o sweep
+resultante é visualmente fiel; o custo de implementação caiu de "vários dias de
+cirurgia no CharacterMesh p/ expor matRot[48] precompute + g_dwHandIndex chain"
+para ~150 linhas. `m_matEffectMat`/`m_matEffectCombine` do original são
+identidade nunca atribuídos (confirmado por grep), o que já simplificava o
+porte — nossa versão dispensa-os por completo.
+
+**Fix fs01 (peixe deformado)**: raiz encontrada — `GLSkinMesh::Upload`
+clampeava `numPalette` em 40, mas o UBO de ossos tem `kMaxBones(64)` matrizes e
+o `skin.vert` declara `uBones[64]`. Meshes com paleta 41-64 (fs01 peixe,
+monstros grandes) tinham vértices referenciando ossos descartados → skinning
+com garbage → deformação. Removido o clamp (o teto real `kMaxBones=64` já é
+validado no parser). Regressão `msh.high_palette_not_clamped`.
+
+**Renderers novos (Batch A)**: `SkillMeshRenderer` (TMEffectMesh) e
+`GroundDecalRenderer` (TMShade) ambos seguem o padrão "GL direto + cache
+Invalidate" do `EffectRenderer::Flush` (doc 18 §11) — nunca passam pelo
+`GLStateCache` compartilhado, evitando corromper o skin pipeline no Metal.
+Shaders `fx_skillmesh` (tex×tint, sem luz/fog) e `fx_decal` (tex×vColor,
+conformado ao terreno).
+
+**Composição**: a maioria das skills/projéteis é **recipe** sobre os
+renderers + billboard (SkillGlow/SkillBurst). O `EffectContainer.host` no
+`SkillCtx` permite que impactos spawnem filhos mid-tick (o fix de
+re-entrância acima).
+
+**Deferidos explícitos** (Fase 7+):
+- `TMEffectSkinMesh` como efeito de beast deslizante (só vale a pena se uma
+  skill precisar do travel skinned).
+- `Beam`/`Spark`/`BillBoard3` como renderers separados (o ribbon +
+  billboard bursts cobrem o visual de combate; beams pontuais p/ ThunderBolt).
+- Sanc/legend pulse emissive (precisaria de `uTime` no skin shader; cosmético).
+- 13 sub-tipos de mesh/level do `TMArrow` (data-table).
+- `SetVecMantua` (cloak orientation p/ mounts).
+- `cSForce` (skill-swing meshes 10/19/20) e child billboards do SWSwing
+  (fire/enchant/gold).
+
+**Validação**: smoke run `--skill meteor,192,192,6` renderiza a chuva de
+impactos (glow laranja + bursts + decals de terreno) end-to-end. 26 suítes
+ctest verdes (+9 novas: spawneffect, skillmesh, swing, skills, msh regressão).

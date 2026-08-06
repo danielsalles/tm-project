@@ -50,4 +50,10 @@ void BillboardFrameMove(Billboard& b, uint32_t nowMs, float camYawH, float camPi
 // Texture index of the current flipbook frame.
 inline int BillboardTexture(const Billboard& b) { return b.d.textureIndex + b.cycleIndex; }
 
+// Builds the EffectRenderer quad for a billboard (UV inset 0.02..0.98 avoids
+// bleeding, doc 18 §3). blendMode: 1 = EF_BRIGHT, 0 = EF_DEFAULT. Defined in
+// the .cpp so the sim header stays GL-free.
+struct FxQuad;
+FxQuad BillboardToQuad(const Billboard& b, int blendMode = 1);
+
 }

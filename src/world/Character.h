@@ -13,6 +13,7 @@ namespace tmx {
 class GLRenderDevice;
 class GLTextureManager;
 class SkinPipeline;
+class SwingTrail;
 
 // ECHAR_MOTION (Enums.h:35).
 enum class CharMotion : int {
@@ -91,11 +92,26 @@ public:
     const CharDesc& Desc() const { return m_desc; }
     CharacterMesh& Mesh() { return m_mesh; }
 
+    // Phase 5 weapon trail (doc 19 §6): configures `trail` to sample this
+    // character's right-hand bone each frame and sweep a ribbon. effectLength
+    // = weapon reach; dur = recording window. The trail is owned by the
+    // EffectContainer, not the character.
+    void AttachSwing(SwingTrail* trail, float effectLength, uint32_t nowMs,
+                     uint32_t dur = 600);
+
+    // Phase 5 mount (doc 19 §11, TMBike): spawns a second CharacterMesh (the
+    // mount) at this character's position and switches to the Seating pose.
+    // skinMeshType = mount BoneAni4 index (e.g. 40 = mantua, hs01 type).
+    bool SetMount(CharacterAnimationCache& cache, GLTextureManager& textures,
+                  int skinMeshType, uint32_t nowMs, std::string* err);
+    bool Mounted() const { return m_mount != nullptr; }
+
 private:
     int MaskAt(float wx, float wz) const;      // GroundGetMask equivalent
     void UpdateWorldMatrix();
 
     CharacterMesh m_mesh;
+    std::unique_ptr<CharacterMesh> m_mount;   // phase 5 mount (TMBike)
     const AniSoundData* m_aniSound = nullptr;
     CharDesc m_desc;
 

@@ -4,6 +4,8 @@
 #include "gl/GLTexture.h"
 #include "gl/EffectRenderer.h"
 #include "gl/SkinPipeline.h"
+#include "gl/SkillMeshRenderer.h"
+#include "gl/GroundDecalRenderer.h"
 #include "scene/ObjectFile.h"
 #include "world/AniSound.h"
 #include "world/Billboard.h"
@@ -15,6 +17,7 @@
 #include "world/TreeRenderer.h"
 #include "world/WeatherFx.h"
 #include "world/Critter.h"
+#include "world/SkillEffect.h"
 
 #include <memory>
 #include <string>
@@ -38,7 +41,6 @@ public:
 
     // GL objects (terrain shader/buffers) — call with a live context.
     bool InitGL(std::string* err);
-
     void Render(GLRenderDevice& device);
     void Destroy();
 
@@ -86,6 +88,12 @@ public:
     // Screen-space/world effect injection (sun flare, weather). Emitted quads
     // are drawn at the end of Render with the other effects.
     void EmitScreenFx(const FxQuad& q) { m_fx.Emit(q); }
+
+    // Phase 5: combat/skill effect container (skills, projectiles, decals,
+    // weapon trails). FieldView ticks it in FrameMove and renders it in the
+    // translucent pass right before m_fx.Flush. Add() takes ownership.
+    void AddSkillEffect(std::unique_ptr<SkillEffect> e) { m_skills.Add(std::move(e)); }
+    EffectContainer& Skills() { return m_skills; }
 
 private:
     struct Object {
@@ -137,6 +145,12 @@ private:
     std::vector<Critter> m_critters;
     std::vector<std::unique_ptr<CharacterMesh>> m_critterMeshes;
     bool m_crittersBuilt = false;
+
+    // Phase 5 combat/skill effects.
+    EffectContainer m_skills;
+    SkillCtx        m_skillCtx;
+    SkillMeshRenderer   m_skillMeshR;
+    GroundDecalRenderer m_decalR;
 
     float m_lastTimeMs = 0.0f;
     float m_bmin[3] = { 0, 0, 0 };
