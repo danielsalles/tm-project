@@ -55,6 +55,7 @@ O cliente **não** é fixed-function puro, como aparenta. A realidade:
 | `13-roadmap.md` | Fases ordenadas, critérios de validação, riscos |
 | `14-fase0-fundacao.md` | Plano completo da Fase 0: CMake, CI, shim D3DX, testes dourados |
 | `15-fase1-primeira-cena.md` | Plano completo da Fase 1: GLRenderDevice, loaders .wys/.msa, cena select-server |
+| `16-fase2-mundo-3d.md` | Plano completo da Fase 2: terreno .trn, céu/clima, mar, TMSkinMesh (.msh/.bon/.ani/.wyt), picking |
 
 ## Stack recomendada
 

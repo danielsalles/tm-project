@@ -65,7 +65,7 @@ add_custom_command(
   DEPENDS ${TM_SHADER_FILES} ${CMAKE_SOURCE_DIR}/cmake/EmbedShaders.cmake
   COMMENT "Embedding GLSL shaders")
 
-# --- tmgl: renderer + loaders + cena (fase 1) ---
+# --- tmgl: renderer + loaders + cena (fases 1-2) ---
 add_library(tmgl STATIC
   ${TM_SHADERS_H}
   src/gl/GLShader.cpp
@@ -73,6 +73,7 @@ add_library(tmgl STATIC
   src/gl/GLRenderDevice.cpp
   src/gl/GLMesh.cpp
   src/gl/GLTexture.cpp
+  src/world/TerrainData.cpp
   src/scene/ObjectFile.cpp
   src/scene/SelectServerView.cpp)
 target_include_directories(tmgl PUBLIC src ${CMAKE_BINARY_DIR}/generated)
