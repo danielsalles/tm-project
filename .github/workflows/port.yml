@@ -53,6 +53,8 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x86    # as libs D3DX de 2003 são 32-bit
 
       - name: compile generator (MSVC + D3DX9 real)
         run: |
