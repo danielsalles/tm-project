@@ -61,7 +61,9 @@ set(TM_SHADER_FILES
   ${CMAKE_SOURCE_DIR}/src/gl/shaders/sky.vert
   ${CMAKE_SOURCE_DIR}/src/gl/shaders/sky.frag
   ${CMAKE_SOURCE_DIR}/src/gl/shaders/sea.vert
-  ${CMAKE_SOURCE_DIR}/src/gl/shaders/sea.frag)
+  ${CMAKE_SOURCE_DIR}/src/gl/shaders/sea.frag
+  ${CMAKE_SOURCE_DIR}/src/gl/shaders/skin.vert
+  ${CMAKE_SOURCE_DIR}/src/gl/shaders/skin.frag)
 set(TM_SHADERS_H ${CMAKE_BINARY_DIR}/generated/shaders_embedded.h)
 add_custom_command(
   OUTPUT ${TM_SHADERS_H}
@@ -85,6 +87,7 @@ add_library(tmgl STATIC
   src/world/SeaSurface.cpp
   src/world/SkinMesh.cpp
   src/world/BoneAnimation.cpp
+  src/world/TreeRenderer.cpp
   src/scene/ObjectFile.cpp
   src/scene/SelectServerView.cpp
   src/scene/FieldView.cpp)

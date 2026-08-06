@@ -1,5 +1,6 @@
 #pragma once
 
+#include <glad/gl.h>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -44,5 +45,20 @@ struct MshData {
 };
 
 bool ParseMsh(const uint8_t* data, size_t size, MshData& out, std::string* err);
+
+// GPU skinned mesh: VAO with pos/weights/indices/normal/uv (locations 0/5/6/1/3).
+// Drawn with the skin shader; the per-draw bone palette (bindInv x combined) is
+// computed by the caller into the shared palette UBO.
+struct GLSkinMesh {
+    GLuint vao = 0, vbo = 0, ebo = 0;
+    int indexCount = 0;
+    uint32_t numInfluence = 0;
+    uint32_t numPalette = 0;
+    D3DXMATRIX boneBindInv[40];
+    uint32_t boneFrameId[40];
+
+    bool Upload(const MshData& data);
+    void Destroy();
+};
 
 }

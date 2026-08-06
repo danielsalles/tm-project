@@ -71,8 +71,9 @@ GLuint EnvTextureFn(int index, void* ctx) {
 } // namespace
 
 bool FieldView::Load(const char* mapName, GLTextureManager& textures,
-                     const std::string& meshListTxt) {
+                     const std::string& meshListTxt, const std::string& boneAniListTxt) {
     m_textures = &textures;
+    m_boneAniListTxt = boneAniListTxt;
     bool any = false;
 
     char trnPath[64], datPath[64];
@@ -103,8 +104,8 @@ bool FieldView::Load(const char* mapName, GLTextureManager& textures,
                 "Leaf", "Tree", "Ship", "House", "TorchEffect",
             };
             for (int k = 1; k < 10; ++k) {
-                if (k == (int)ObjectKind::Sea)
-                    continue;   // collected into m_seaDescs above
+                if (k == (int)ObjectKind::Sea || k == (int)ObjectKind::Tree)
+                    continue;   // collected into m_seaDescs / m_treeInsts
                 if (file.skipped[k])
                     Log("FieldView: pulando %d objetos do tipo %s (D6-D8/fase 4)",
                         file.skipped[k], kKindName[k]);
@@ -119,6 +120,28 @@ bool FieldView::Load(const char* mapName, GLTextureManager& textures,
                 if (kind == ObjectKind::Sea) {
                     m_seaDescs.push_back({ r.nMaskIndex / 2, r.nTextureSetIndex / 2,
                                            offX + r.posX, r.fHeight, offY + r.posY });
+                    continue;
+                }
+                if (kind == ObjectKind::Tree) {
+                    // TMTree::InitLook mapping + look overrides
+                    const uint32_t t = r.dwObjType;
+                    TreeRenderer::Instance inst;
+                    if (t >= 331 && t <= 342)
+                        inst.boneAniIdx = (int)(t - 331) / 2 + 63;
+                    else
+                        inst.boneAniIdx = (int)(t - 351) / 2 + 71;
+                    switch (t) {
+                    case 342: inst.meshLook = 1; break;
+                    case 362: inst.meshLook = 1; break;
+                    case 354: case 361: case 377: case 375: case 373:
+                        inst.skinLook = 1; break;
+                    default: break;
+                    }
+                    inst.x = offX + r.posX;
+                    inst.y = r.fHeight;
+                    inst.z = offY + r.posY;
+                    inst.angle = r.fAngle;
+                    m_treeInsts.push_back(inst);
                     continue;
                 }
                 if (kind != ObjectKind::GenericStatic)
@@ -181,6 +204,10 @@ bool FieldView::InitGL(std::string* err) {
                             m_seaDescs[i].x, m_seaDescs[i].h, m_seaDescs[i].z, err))
             return false;
     }
+    if (!m_trees.Init(m_boneAniListTxt, *m_textures, err))
+        return false;
+    for (const auto& inst : m_treeInsts)
+        m_trees.Add(inst);
     return true;
 }
 
@@ -248,16 +275,21 @@ void FieldView::Render(GLRenderDevice& device) {
     for (auto& sea : m_seas)
         sea.Render(device, *m_textures, m_seaShader,
                    m_locSeaWorld, m_locSeaTex0, m_locSeaTex1);
+
+    // Animated trees (skinned) — alpha-tested opaque, anywhere in the opaque pass.
+    m_trees.Render(device, m_lastTimeMs);
 }
 
 void FieldView::FrameMove(float timeSec) {
     for (auto& sea : m_seas)
         sea.FrameMove(timeSec);
+    m_lastTimeMs = timeSec * 1000.0f;
 }
 
 void FieldView::Destroy() {
     m_terrainRenderer.Destroy();
     m_seaShader.Destroy();
+    m_trees.Destroy();
     for (auto& sea : m_seas)
         sea.Destroy();
     m_seas.clear();

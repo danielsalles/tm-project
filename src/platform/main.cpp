@@ -175,15 +175,16 @@ int main(int argc, char** argv) {
     bool sceneLoaded = false;
     {
         std::vector<uint8_t> texList, envTexList, fxTexList;
-        std::string meshList;
+        std::string meshList, boneAniList;
         if (ReadWholeFile("Mesh\\MeshTextureList.bin", texList))
             textures.LoadModelTextureList(texList.data(), texList.size());
         if (ReadWholeFile("env\\EnvTextureList3.bin", envTexList))
             textures.LoadEnvTextureList(envTexList.data(), envTexList.size());
         if (ReadWholeFile("Effect\\EffectTextureList.bin", fxTexList))
             textures.LoadEffectTextureList(fxTexList.data(), fxTexList.size());
+        ReadWholeFileText("Mesh\\BoneAni4.txt", boneAniList);
         if (ReadWholeFileText("Mesh\\MeshList.txt", meshList))
-            sceneLoaded = view.Load(mapName, textures, meshList);
+            sceneLoaded = view.Load(mapName, textures, meshList, boneAniList);
         if (sceneLoaded) {
             std::string glErr;
             if (!view.InitGL(&glErr)) {

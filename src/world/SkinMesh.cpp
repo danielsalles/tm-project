@@ -65,4 +65,58 @@ bool ParseMsh(const uint8_t* data, size_t size, MshData& out, std::string* err) 
     return true;
 }
 
+bool GLSkinMesh::Upload(const MshData& data) {
+    Destroy();
+    if (data.numVerts == 0 || data.indices.empty())
+        return false;
+
+    numInfluence = data.numInfluence;
+    numPalette = data.numPalette;
+    if (numPalette > 40)
+        numPalette = 40;
+    for (uint32_t i = 0; i < numPalette; ++i) {
+        boneBindInv[i] = data.boneBindInv[i];
+        boneFrameId[i] = data.boneFrameId[i];
+    }
+
+    glGenVertexArrays(1, &vao);
+    glBindVertexArray(vao);
+
+    glGenBuffers(1, &vbo);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)data.vertices.size(), data.vertices.data(), GL_STATIC_DRAW);
+
+    glGenBuffers(1, &ebo);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, (GLsizeiptr)(data.indices.size() * 2), data.indices.data(), GL_STATIC_DRAW);
+
+    const uint32_t stride = data.vsize;
+    glEnableVertexAttribArray(0);   // pos
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, stride, (void*)0);
+    // weights: N-1 floats at 12; the shader reads a vec4 — pad behavior differs
+    // per N, so upload what exists and let the VS use only the first N-1.
+    glEnableVertexAttribArray(5);
+    glVertexAttribPointer(5, 4, GL_FLOAT, GL_FALSE, stride, (void*)(uintptr_t)data.OffWeights());
+    glEnableVertexAttribArray(6);   // bone indices: 4 x u8
+    glVertexAttribIPointer(6, 4, GL_UNSIGNED_BYTE, stride, (void*)(uintptr_t)data.OffIndices());
+    glEnableVertexAttribArray(1);   // normal
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, stride, (void*)(uintptr_t)data.OffNormal());
+    glEnableVertexAttribArray(3);   // uv
+    glVertexAttribPointer(3, 2, GL_FLOAT, GL_FALSE, stride, (void*)(uintptr_t)data.OffUV());
+
+    glBindVertexArray(0);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+    indexCount = (int)data.indices.size();
+    return true;
+}
+
+void GLSkinMesh::Destroy() {
+    if (vao) glDeleteVertexArrays(1, &vao);
+    if (vbo) glDeleteBuffers(1, &vbo);
+    if (ebo) glDeleteBuffers(1, &ebo);
+    vao = vbo = ebo = 0;
+    indexCount = 0;
+}
+
 }
