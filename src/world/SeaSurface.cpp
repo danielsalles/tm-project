@@ -50,9 +50,10 @@ bool SeaSurface::Init(int gridX, int gridY, float x, float height, float z,
             const uint16_t b = (uint16_t)(nX + (nY + 1) * vx);
             const uint16_t c = (uint16_t)(nX + 1 + nY * vx);
             const uint16_t d = (uint16_t)(nX + 1 + (nY + 1) * vx);
-            // Original emits (a,b,c)(b,d,c) in D3D y-down space; reversed for GL.
-            indices.push_back(a); indices.push_back(c); indices.push_back(b);
-            indices.push_back(b); indices.push_back(c); indices.push_back(d);
+            // Original emits (a,b,c)(b,d,c); with glFrontFace(GL_CW) the D3D
+            // order is correct as-is (sea also disables culling anyway).
+            indices.push_back(a); indices.push_back(b); indices.push_back(c);
+            indices.push_back(b); indices.push_back(d); indices.push_back(c);
         }
     }
     m_indexCount = (int)indices.size();

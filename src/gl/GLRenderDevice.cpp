@@ -170,7 +170,25 @@ void GLRenderDevice::DrawMesh(const GLMesh& mesh) {
     for (int i = 0; i < mesh.subsetCount; ++i) {
         m_state.texture[0] = mesh.subsets[i].textureIndex > 0
             ? (GLuint)mesh.subsets[i].textureIndex : m_whiteTex;
+        // TMObject::Render: alpha-flagged textures get ALPHAREF 0xAA + alpha blend
+        // (SRCALPHA/INVSRCALPHA); 'N' textures stay opaque cutout at the block's ref.
+        const char flag = mesh.subsets[i].alphaFlag;
+        if (m_block1) {
+            if (flag != 'N') {
+                m_state.blend = true;
+                m_state.blendSrc = GL_SRC_ALPHA;
+                m_state.blendDst = GL_ONE_MINUS_SRC_ALPHA;
+                m_state.alphaTest = true;
+                m_state.alphaRef = 170.0f;   // 0xAA
+            } else {
+                m_state.blend = false;
+                m_state.alphaTest = true;
+                m_state.alphaRef = 221.0f;   // 0xDD (block-1 default)
+            }
+        }
         m_state.Apply();
+        glUniform1f(m_locAlphaRef, m_state.alphaRef);
+        glUniform1i(m_locAlphaTest, m_state.alphaTest ? 1 : 0);
         glDrawElements(GL_TRIANGLES, (GLsizei)mesh.subsets[i].indexCount,
                        GL_UNSIGNED_SHORT,
                        (void*)(uintptr_t)(mesh.subsets[i].indexStart * 2));

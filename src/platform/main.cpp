@@ -148,6 +148,11 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    // D3D9 front faces are clockwise on screen (y-down window); GL's default is
+    // CCW (y-up). Flipping the front-face definition makes D3DCULL_CCW == GL_BACK
+    // with identical semantics to the original (validated on castle walls).
+    glFrontFace(GL_CW);
+
     tmx::LogInit("tm.log");
     tmx::Log("OpenGL context up: %s", (const char*)glGetString(GL_VERSION));
     WriteBootReport("boot_report.txt");

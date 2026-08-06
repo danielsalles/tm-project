@@ -51,4 +51,10 @@ extern const float kBackTileCoordList[32][4][2];
 // table only matters when streaming neighbors — phase 3+).
 bool ParseTrn(const uint8_t* data, size_t size, TerrainData& out, std::string* err);
 
+// Baked-light accessors (ports of TMGround::GetColor/SetColor, including the
+// original's /256 and interpolation quirks — TMGround.cpp:3637-3718).
+// worldX/worldZ are absolute world coordinates; out is rgba float[4].
+void TerrainGetColor(const TerrainData& t, float worldX, float worldZ, float* out4);
+void TerrainSetColor(TerrainData& t, float worldX, float worldZ, uint32_t dwColor);
+
 }

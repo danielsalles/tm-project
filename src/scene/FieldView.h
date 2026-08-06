@@ -72,6 +72,7 @@ private:
 
     TreeRenderer m_trees;
     std::vector<TreeRenderer::Instance> m_treeInsts;
+    std::vector<ObjectFileRecord> m_lampRecords;
     std::string  m_boneAniListTxt;
 
     std::vector<Object> m_objects;

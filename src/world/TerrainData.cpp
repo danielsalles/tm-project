@@ -214,4 +214,53 @@ bool ParseTrn(const uint8_t* data, size_t size, TerrainData& out, std::string* e
     return true;
 }
 
+void TerrainGetColor(const TerrainData& t, float worldX, float worldZ, float* out4) {
+    out4[0] = out4[1] = out4[2] = out4[3] = 1.0f;
+    const float lx = worldX - t.OffsetX();
+    const float lz = worldZ - t.OffsetY();
+    const int nX = (int)(lx / 2.0f);
+    const int nY = (int)(lz / 2.0f);
+
+    uint32_t dwColor[4] = { 0, 0, 0, 0 };
+    const bool inMain  = (nX >= 0 && nX < 63 && nY >= 0 && nY < 63);
+    const bool rightEd = (nX == 63 && nY >= 0 && nY < 63);
+    if (inMain) {
+        dwColor[0] = t.tiles[nX + (nY << 6)].color;
+        dwColor[1] = t.tiles[nX + (nY << 6) + 1].color;
+        dwColor[2] = t.tiles[nX + ((nY + 1) << 6)].color;
+        dwColor[3] = t.tiles[nX + ((nY + 1) << 6) + 1].color;
+    } else if (rightEd) {
+        dwColor[0] = t.tiles[(nY << 6) + 63].color;
+        dwColor[1] = t.tiles[(nY << 6) + 63].color;
+        dwColor[2] = t.tiles[((nY + 1) << 6) + 63].color;
+        dwColor[3] = t.tiles[((nY + 1) << 6) + 63].color;
+    } else if (nX < 0 || nX > 63 || nY < 0 || nY > 63) {
+        return;   // fully outside: white (original's default)
+    }
+    // else: bottom edge — the original's third branch repeats "nX == 63" (dead
+    // code), so nY==63 & nX<63 computes with zeros (black). Preserved.
+
+    float color[4][3];
+    for (int i = 0; i < 4; ++i) {
+        color[i][0] = ((dwColor[i] & 0xFF0000) >> 16) / 256.0f;   // original divides by 256
+        color[i][1] = ((dwColor[i] & 0x00FF00) >> 8) / 256.0f;
+        color[i][2] = (dwColor[i] & 0x0000FF) / 256.0f;
+    }
+
+    const float fDX = (float)(nX * 2.0f) - lx;
+    const float fDY = (float)(nY * 2.0f) - lz;
+    for (int c = 0; c < 3; ++c) {
+        out4[c] = ((fDX + fDY) * color[3][c] + ((4.0f - fDX) - fDY) * color[0][c] +
+                   ((fDX + 2.0f) - fDY) * color[1][c] + ((2.0f - fDX) + fDY) * color[2][c]) / 12.0f;
+    }
+    out4[3] = 1.0f;
+}
+
+void TerrainSetColor(TerrainData& t, float worldX, float worldZ, uint32_t dwColor) {
+    const int nX = (int)(worldX - t.OffsetX()) / 2;
+    const int nY = (int)(worldZ - t.OffsetY()) / 2;
+    if (nX >= 0 && nX <= 63 && nY >= 0 && nY <= 63)
+        t.tiles[nX + (nY << 6)].color = dwColor;
+}
+
 }

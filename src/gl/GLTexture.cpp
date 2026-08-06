@@ -193,20 +193,27 @@ bool GLTextureManager::LoadEffectTextureList(const uint8_t* data, size_t size) {
 }
 
 int GLTextureManager::FindModelTexture(const char* meshRelativeWysPath) const {
+    // Extension-insensitive match (like the original's GetModelTextureIndex, which
+    // copies the list extension onto the query): .msa files name textures with
+    // stale extensions (".tga"!), and TMSkinMesh queries ".wyt" where the list
+    // has ".wys". Compare dir + basename, ignore the extension.
+    auto stemEquals = [](const char* a, const char* b) {
+        size_t i = 0;
+        while (a[i] && b[i] && a[i] != '.' && b[i] != '.') {
+            char ca = a[i] == '\\' ? '/' : (char)tolower((unsigned char)a[i]);
+            char cb = b[i] == '\\' ? '/' : (char)tolower((unsigned char)b[i]);
+            if (ca != cb)
+                return false;
+            ++i;
+        }
+        const bool aEnd = !a[i] || a[i] == '.';
+        const bool bEnd = !b[i] || b[i] == '.';
+        return aEnd && bEnd;
+    };
     for (size_t i = 0; i < m_entries.size(); ++i) {
         if (m_entries[i].fileName[0] == '\0')
             continue;
-        const char* a = m_entries[i].fileName;
-        const char* b = meshRelativeWysPath;
-        size_t j = 0;
-        while (a[j] && b[j]) {
-            char ca = a[j] == '\\' ? '/' : (char)tolower((unsigned char)a[j]);
-            char cb = b[j] == '\\' ? '/' : (char)tolower((unsigned char)b[j]);
-            if (ca != cb)
-                break;
-            ++j;
-        }
-        if (a[j] == b[j]) // both ended together
+        if (stemEquals(m_entries[i].fileName, meshRelativeWysPath))
             return (int)i;
     }
     return -1;

@@ -47,6 +47,7 @@ struct GLMesh {
         uint32_t indexStart;   // first index (attrRange.faceStart * 3)
         uint32_t indexCount;   // attrRange.faceCount * 3
         int      textureIndex; // resolved by the caller via textureNames
+        char     alphaFlag;    // list cAlpha: 'N' opaque, 'C' cutout, 'A'/'a' blend
     };
     Subset subsets[32];
     int subsetCount = 0;

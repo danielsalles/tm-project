@@ -118,15 +118,14 @@ bool TerrainRenderer::Build(const TerrainData& terrain, std::string* err) {
             }
 
             std::vector<uint16_t>& dst = bucketIdx[key];
-            // The original's pick triangles are (0,1,2)/(3,2,1) in D3D's y-down
-            // framebuffer (CW = front). In our GL y-up window that winding reads
-            // CW = back face — so emit the reversed order (04 §4.2 note).
+            // Original tri order (0,1,2)/(3,2,1): D3D CW-front == our GL front
+            // (glFrontFace(GL_CW) set at context init).
             dst.push_back(vbase + 0);
-            dst.push_back(vbase + 2);
             dst.push_back(vbase + 1);
+            dst.push_back(vbase + 2);
             dst.push_back(vbase + 3);
-            dst.push_back(vbase + 1);
             dst.push_back(vbase + 2);
+            dst.push_back(vbase + 1);
             vbase += 4;
         }
     }

@@ -144,7 +144,13 @@ bool FieldView::Load(const char* mapName, GLTextureManager& textures,
                     m_treeInsts.push_back(inst);
                     continue;
                 }
-                if (kind != ObjectKind::GenericStatic)
+                if (kind == ObjectKind::TorchEffect && r.dwObjType >= 501 && r.dwObjType <= 503) {
+                    m_lampRecords.push_back(r);   // terrain tint applied after the loop
+                    continue;
+                }
+                if (kind != ObjectKind::GenericStatic &&
+                    kind != ObjectKind::House && kind != ObjectKind::Ship &&
+                    kind != ObjectKind::Float)
                     continue;
                 Object o;
                 o.meshIndex = (int)r.dwObjType;
@@ -185,6 +191,39 @@ bool FieldView::Load(const char* mapName, GLTextureManager& textures,
 
     Log("FieldView: %s -> terreno=%s, %zu objetos estaticos",
         mapName, m_hasTerrain ? "ok" : "ausente", m_objects.size());
+
+    // Lamp ground tint (TMObjectContainer.cpp dwObjType 501-503): the averaged
+    // lamp/ground color is baked into the tile corner color at load time.
+    // (The glow billboards themselves are phase 4 — only the terrain tint here.)
+    if (m_hasTerrain) {
+        static const uint32_t kLampCol[3][2] = {
+            { 0x00FFAA00, 0x33331100 },
+            { 0x00FFAA00, 0x33331100 },
+            { 0x00AA00FF, 0x00110033 },
+        };
+        for (const auto& r : m_lampRecords) {
+            const int n = (int)(r.dwObjType - 501);
+            if (n < 0 || n > 2)
+                continue;
+            const float wx = m_terrain.OffsetX() + r.posX;
+            const float wz = m_terrain.OffsetY() + r.posY;
+            float g[4];
+            TerrainGetColor(m_terrain, wx, wz, g);
+            const uint32_t c = kLampCol[n][0];
+            const uint32_t dwGA = ((uint32_t)(g[3] * 256.0f)) & 0xFF;   // original's *256 wrap
+            const uint32_t dwGR = ((uint32_t)(g[0] * 256.0f)) & 0xFF;
+            const uint32_t dwGG = ((uint32_t)(g[1] * 256.0f)) & 0xFF;
+            const uint32_t dwGB = ((uint32_t)(g[2] * 256.0f)) & 0xFF;
+            const uint32_t dwCA = (c & 0xFF000000) >> 24;
+            const uint32_t dwCR = (c & 0x00FF0000) >> 16;
+            const uint32_t dwCG = (c & 0x0000FF00) >> 8;
+            const uint32_t dwCB = (c & 0x000000FF);
+            const uint32_t dwCol =
+                (((dwCB + dwGB) >> 1)) | (((dwCG + dwGG) >> 1) << 8) |
+                (((dwCR + dwGR) >> 1) << 16) | (((dwCA + dwGA) >> 1) << 24);
+            TerrainSetColor(m_terrain, wx, wz, dwCol);
+        }
+    }
     return any;
 }
 
@@ -245,6 +284,7 @@ GLMesh* FieldView::GetMesh(int index, GLTextureManager& textures) {
         snprintf(rel, sizeof rel, "mesh\\%s.wys", mesh.textureNames[i].c_str());
         int texIndex = textures.FindModelTexture(rel);
         mesh.subsets[i].textureIndex = (int)textures.GetModelTexture(texIndex);
+        mesh.subsets[i].alphaFlag = textures.AlphaFlag(texIndex);
     }
     return &mesh;
 }

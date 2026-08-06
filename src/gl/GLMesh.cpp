@@ -193,6 +193,7 @@ bool GLMesh::Upload(const MsaData& data) {
         subsets[i].indexStart = data.subsets[i].faceStart * 3;
         subsets[i].indexCount = data.subsets[i].faceCount * 3;
         subsets[i].textureIndex = -1;
+        subsets[i].alphaFlag = 'N';
         textureNames[i] = data.textureNames[i];
     }
     return true;
