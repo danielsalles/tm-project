@@ -41,8 +41,8 @@ static FILE* OpenOut(const char* name) {
     return f;
 }
 
-#define GEN_LOOP(name, n, body) \
-    { FILE* f = OpenOut(name); for (int i = 0; i < (n); i++) { body } fclose(f); }
+#define GEN_LOOP(name, n, ...) \
+    { FILE* f = OpenOut(name); for (int i = 0; i < (n); i++) { __VA_ARGS__ } fclose(f); }
 
 int main(int argc, char** argv) {
     if (argc > 1)
