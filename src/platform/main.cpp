@@ -107,7 +107,7 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    if (!gladLoadGL((GLADloadfunc)SDL_GL_GetProcAddress)) {
+    if (!gladLoadGL((GLADloadfunc)SDL_GL_GetProcAddress) || !GLAD_GL_VERSION_4_1) {
         SDL_Log("OpenGL 4.1 core indisponivel");
         SDL_GL_DestroyContext(ctx);
         SDL_DestroyWindow(window);

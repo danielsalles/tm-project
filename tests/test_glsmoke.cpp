@@ -38,7 +38,9 @@ int main(int argc, char** argv) {
     }
 
     SDL_GLContext ctx = SDL_GL_CreateContext(window);
-    if (!ctx || !gladLoadGL((GLADloadfunc)SDL_GL_GetProcAddress)) {
+    // gladLoadGL returns non-zero even on a legacy GL 1.1 context (Windows runners
+    // only expose GDI's 1.1) — must check the feature flag or 4.1 pointers stay NULL.
+    if (!ctx || !gladLoadGL((GLADloadfunc)SDL_GL_GetProcAddress) || !GLAD_GL_VERSION_4_1) {
         printf("SKIP glsmoke: GL 4.1 core indisponivel (%s)\n", SDL_GetError());
         if (ctx) SDL_GL_DestroyContext(ctx);
         SDL_DestroyWindow(window);
