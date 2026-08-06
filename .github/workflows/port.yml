@@ -1,0 +1,71 @@
+name: Port (OpenGL)
+
+on:
+  push:
+    branches: [feature/*]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-14,     cc: clang, cxx: clang++ }
+          - { os: ubuntu-24.04, cc: gcc,   cxx: g++     }
+          - { os: windows-2022, cc: cl,    cxx: cl      }
+    runs-on: ${{ matrix.os }}
+    env:
+      CC: ${{ matrix.cc }}
+      CXX: ${{ matrix.cxx }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: deps (linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libx11-dev libxext-dev libwayland-dev \
+            libxkbcommon-dev wayland-protocols libegl1-mesa-dev
+
+      - name: configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DTM_BUILD_TESTS=ON
+
+      - name: build
+        run: cmake --build build -j
+
+      - name: test
+        run: ctest --test-dir build --output-on-failure
+
+      - name: boot report (artifact)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: boot_report_${{ matrix.os }}
+          path: build/boot_report.txt
+          if-no-files-found: ignore
+
+  generate-golden:
+    runs-on: windows-2022
+    if: github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: compile generator (MSVC + D3DX9 real)
+        run: |
+          cl /EHsc /W3 tests/golden/golden_generator.cpp `
+            /I Dependencies/Directx/Include `
+            /link /LIBPATH:Dependencies/Directx/Lib d3dx9.lib `
+            /OUT:golden_generator.exe
+
+      - name: run generator
+        run: |
+          mkdir tests/golden/data -Force | Out-Null
+          ./golden_generator.exe tests/golden/data
+
+      - name: upload golden data
+        uses: actions/upload-artifact@v4
+        with:
+          name: golden-data
+          path: tests/golden/data/*.bin
