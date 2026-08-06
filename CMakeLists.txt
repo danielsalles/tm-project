@@ -83,6 +83,8 @@ add_library(tmgl STATIC
   src/world/TerrainRenderer.cpp
   src/world/SkyDome.cpp
   src/world/SeaSurface.cpp
+  src/world/SkinMesh.cpp
+  src/world/BoneAnimation.cpp
   src/scene/ObjectFile.cpp
   src/scene/SelectServerView.cpp
   src/scene/FieldView.cpp)

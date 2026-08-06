@@ -30,6 +30,12 @@ const std::string& DataDir() {
     return s_dataDir;
 }
 
+void SetDataDir(const char* path) {
+    s_dataDir = path ? path : "./";
+    if (!s_dataDir.empty() && s_dataDir.back() != '/')
+        s_dataDir += '/';
+}
+
 FILE* OpenAsset(const char* relPath, const char* mode) {
     std::string full = DataDir() + NormalizePath(relPath);
     FILE* f = fopen(full.c_str(), mode);
