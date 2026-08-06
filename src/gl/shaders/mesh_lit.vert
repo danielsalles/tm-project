@@ -9,13 +9,17 @@ uniform mat4 uWorld;                  // transposed at upload, like the UBO matr
 
 out vec2 vUV;
 out vec4 vColor;
+out float vFogDepth;
 
 void main() {
     vec3 n = normalize(mat3(uWorld) * aNormal);
-    vec4 lit = uAmbient;
+    vec3 lightSum = vec3(0.0);
     for (int i = 0; i < 2; ++i)
-        lit += uLightColor[i] * max(dot(n, -uLightDir[i].xyz), 0.0) * uLightDir[i].w;
-    vColor = lit * aColor;
+        lightSum += uLightColor[i].rgb * max(dot(n, -uLightDir[i].xyz), 0.0) * uLightDir[i].w;
+    // D3D fixed pipe: ambient*matAmb(=0) + lightSum*diffuse(=vertex color) + emissive
+    vColor = vec4(aColor.rgb * lightSum + uEmissive.rgb, aColor.a);
     vUV = aUV;
-    gl_Position = FixZ(uProj * uView * uWorld * vec4(aPos, 1.0));
+    vec4 viewPos = uView * uWorld * vec4(aPos, 1.0);
+    vFogDepth = viewPos.z;           // LH view space: forward is +z
+    gl_Position = FixZ(uProj * viewPos);
 }

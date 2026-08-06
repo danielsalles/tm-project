@@ -55,7 +55,15 @@ target_compile_options(tmcore PRIVATE
 set(TM_SHADER_FILES
   ${CMAKE_SOURCE_DIR}/src/gl/shaders/common.glsl
   ${CMAKE_SOURCE_DIR}/src/gl/shaders/mesh_lit.vert
-  ${CMAKE_SOURCE_DIR}/src/gl/shaders/mesh_lit.frag)
+  ${CMAKE_SOURCE_DIR}/src/gl/shaders/mesh_lit.frag
+  ${CMAKE_SOURCE_DIR}/src/gl/shaders/terrain.vert
+  ${CMAKE_SOURCE_DIR}/src/gl/shaders/terrain.frag
+  ${CMAKE_SOURCE_DIR}/src/gl/shaders/sky.vert
+  ${CMAKE_SOURCE_DIR}/src/gl/shaders/sky.frag
+  ${CMAKE_SOURCE_DIR}/src/gl/shaders/sea.vert
+  ${CMAKE_SOURCE_DIR}/src/gl/shaders/sea.frag
+  ${CMAKE_SOURCE_DIR}/src/gl/shaders/skin.vert
+  ${CMAKE_SOURCE_DIR}/src/gl/shaders/skin.frag)
 set(TM_SHADERS_H ${CMAKE_BINARY_DIR}/generated/shaders_embedded.h)
 add_custom_command(
   OUTPUT ${TM_SHADERS_H}
@@ -65,7 +73,7 @@ add_custom_command(
   DEPENDS ${TM_SHADER_FILES} ${CMAKE_SOURCE_DIR}/cmake/EmbedShaders.cmake
   COMMENT "Embedding GLSL shaders")
 
-# --- tmgl: renderer + loaders + cena (fase 1) ---
+# --- tmgl: renderer + loaders + cena (fases 1-2) ---
 add_library(tmgl STATIC
   ${TM_SHADERS_H}
   src/gl/GLShader.cpp
@@ -73,8 +81,16 @@ add_library(tmgl STATIC
   src/gl/GLRenderDevice.cpp
   src/gl/GLMesh.cpp
   src/gl/GLTexture.cpp
+  src/world/TerrainData.cpp
+  src/world/TerrainRenderer.cpp
+  src/world/SkyDome.cpp
+  src/world/SeaSurface.cpp
+  src/world/SkinMesh.cpp
+  src/world/BoneAnimation.cpp
+  src/world/TreeRenderer.cpp
   src/scene/ObjectFile.cpp
-  src/scene/SelectServerView.cpp)
+  src/scene/SelectServerView.cpp
+  src/scene/FieldView.cpp)
 target_include_directories(tmgl PUBLIC src ${CMAKE_BINARY_DIR}/generated)
 target_link_libraries(tmgl PUBLIC tmcore glad stb)
 target_compile_options(tmgl PRIVATE

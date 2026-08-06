@@ -50,6 +50,8 @@ int main(int argc, char** argv) {
 
     printf("glsmoke: %s | %s\n", glGetString(GL_VERSION), glGetString(GL_RENDERER));
 
+    glFrontFace(GL_CW);   // D3D winding convention (see main.cpp)
+
     // default GL viewport is 0x0 — without this nothing rasterizes
     int pw = 0, ph = 0;
     SDL_GetWindowSizeInPixels(window, &pw, &ph);
@@ -79,7 +81,7 @@ int main(int argc, char** argv) {
     data.vertices.resize(3 * 40, 0);
     for (int i = 0; i < 3; ++i)
         memcpy(data.vertices.data() + i * 40, verts[i], 32);
-    const uint16_t idx[3] = { 0, 1, 2 };
+    const uint16_t idx[3] = { 0, 2, 1 };   // CW on screen = front with glFrontFace(GL_CW)
     data.indices.assign(idx, idx + 3);
     tmx::MsaData::AttrRange ar{};
     ar.faceStart = 0;

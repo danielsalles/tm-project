@@ -2,6 +2,9 @@
 
 #include "platform/Platform.h"
 
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb_image.h>
+
 #include <cstring>
 #include <cctype>
 
@@ -11,6 +14,58 @@ namespace {
 
 uint32_t ReadU32(const uint8_t* p) {
     return (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
+}
+
+// .wyt = "WT10" + TGA without the 18-byte footer (validated on mesh/cbt054.wyt:
+// uncompressed BGR(A), type 2). stb_image parses the TGA directly (footer not
+// needed) and handles the bottom-left origin flip.
+GLuint LoadTextureWYT(const uint8_t* fileBytes, size_t size) {
+    if (size < 5 || memcmp(fileBytes, "WT10", 4) != 0) {
+        Log("LoadTextureWYT: bad magic");
+        return 0;
+    }
+    int w = 0, h = 0, comp = 0;
+    stbi_uc* pixels = stbi_load_from_memory(fileBytes + 4, (int)(size - 4), &w, &h, &comp, 4);
+    if (!pixels) {
+        Log("LoadTextureWYT: stb decode failed (%s)", stbi_failure_reason());
+        return 0;
+    }
+    GLuint tex = 0;
+    glGenTextures(1, &tex);
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+    glGenerateMipmap(GL_TEXTURE_2D);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    stbi_image_free(pixels);
+    return tex;
+}
+
+GLuint LoadListTexture(const char* fileName, GLuint& slot) {
+    if (slot)
+        return slot;
+    FILE* f = OpenAsset(fileName, "rb");
+    if (!f) {
+        Log("texture missing: %s", fileName);
+        return 0;
+    }
+    fseek(f, 0, SEEK_END);
+    long sz = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    std::vector<uint8_t> bytes((size_t)sz);
+    if (fread(bytes.data(), 1, (size_t)sz, f) != (size_t)sz) {
+        fclose(f);
+        return 0;
+    }
+    fclose(f);
+    // Dispatch by extension: .wys = mangled DDS (DXT), .wyt = WT10 + TGA.
+    const size_t len = strlen(fileName);
+    if (len >= 4 && tolower((unsigned char)fileName[len - 1]) == 't')
+        slot = LoadTextureWYT(bytes.data(), bytes.size());
+    else
+        slot = LoadTextureWYS(bytes.data(), bytes.size());
+    return slot;
 }
 
 // DDS_HEADER field offsets, relative to the start of the magic ("DDS ").
@@ -99,45 +154,66 @@ GLuint LoadTextureWYS(const uint8_t* fileBytes, size_t size) {
     return tex;
 }
 
-bool GLTextureManager::LoadModelTextureList(const uint8_t* data, size_t size) {
-    constexpr size_t kEntry = 264;
-    constexpr size_t kMaxEntries = 2048;
-
+bool GLTextureManager::LoadList528(const uint8_t* data, size_t size, size_t maxEntries,
+                                   std::vector<TextureListEntry>& entries,
+                                   std::vector<GLuint>& textures) {
+    constexpr size_t kEntry = 528;
     size_t count = size / kEntry;
-    if (count > kMaxEntries)
-        count = kMaxEntries;
+    if (count > maxEntries)
+        count = maxEntries;
 
-    m_entries.resize(count);
-    m_textures.assign(count, 0);
-
+    entries.resize(count);
+    textures.assign(count, 0);
     for (size_t i = 0; i < count; ++i) {
-        const uint8_t* p = data + i * kEntry;
-        memcpy(m_entries[i].fileName, p, 255);
-        m_entries[i].fileName[254] = '\0';
-        m_entries[i].cAlpha = (char)p[255];
-        m_entries[i].dwLastUsedTime = ReadU32(p + 256);
-        m_entries[i].dwShowTime = ReadU32(p + 260);
-        if (m_entries[i].cAlpha == 0)
-            m_entries[i].cAlpha = 'N';
+        const uint8_t* p = data + i * kEntry;   // A half
+        memcpy(entries[i].fileName, p, 255);
+        entries[i].fileName[254] = '\0';
+        entries[i].cAlpha = (char)p[255];
+        entries[i].dwLastUsedTime = ReadU32(p + 256);
+        entries[i].dwShowTime = ReadU32(p + 260);
+        if (entries[i].cAlpha == 0 || entries[i].cAlpha == (char)0xCD)
+            entries[i].cAlpha = 'N';
     }
     return count > 0;
 }
 
+bool GLTextureManager::LoadModelTextureList(const uint8_t* data, size_t size) {
+    // 528-byte A/B record layout (validated on MeshTextureList.bin).
+    return LoadList528(data, size, 4096, m_entries, m_textures);
+}
+
+bool GLTextureManager::LoadEnvTextureList(const uint8_t* data, size_t size) {
+    // Validated against EnvTextureList3.txt: entry i at i*528 (doc 16 §2.2).
+    return LoadList528(data, size, 2048, m_envEntries, m_envTextures);
+}
+
+bool GLTextureManager::LoadEffectTextureList(const uint8_t* data, size_t size) {
+    // Effect\EffectTextureList.bin — same layout (600 entries in this build).
+    return LoadList528(data, size, 1024, m_fxEntries, m_fxTextures);
+}
+
 int GLTextureManager::FindModelTexture(const char* meshRelativeWysPath) const {
+    // Extension-insensitive match (like the original's GetModelTextureIndex, which
+    // copies the list extension onto the query): .msa files name textures with
+    // stale extensions (".tga"!), and TMSkinMesh queries ".wyt" where the list
+    // has ".wys". Compare dir + basename, ignore the extension.
+    auto stemEquals = [](const char* a, const char* b) {
+        size_t i = 0;
+        while (a[i] && b[i] && a[i] != '.' && b[i] != '.') {
+            char ca = a[i] == '\\' ? '/' : (char)tolower((unsigned char)a[i]);
+            char cb = b[i] == '\\' ? '/' : (char)tolower((unsigned char)b[i]);
+            if (ca != cb)
+                return false;
+            ++i;
+        }
+        const bool aEnd = !a[i] || a[i] == '.';
+        const bool bEnd = !b[i] || b[i] == '.';
+        return aEnd && bEnd;
+    };
     for (size_t i = 0; i < m_entries.size(); ++i) {
         if (m_entries[i].fileName[0] == '\0')
             continue;
-        const char* a = m_entries[i].fileName;
-        const char* b = meshRelativeWysPath;
-        size_t j = 0;
-        while (a[j] && b[j]) {
-            char ca = a[j] == '\\' ? '/' : (char)tolower((unsigned char)a[j]);
-            char cb = b[j] == '\\' ? '/' : (char)tolower((unsigned char)b[j]);
-            if (ca != cb)
-                break;
-            ++j;
-        }
-        if (a[j] == b[j]) // both ended together
+        if (stemEquals(m_entries[i].fileName, meshRelativeWysPath))
             return (int)i;
     }
     return -1;
@@ -146,26 +222,23 @@ int GLTextureManager::FindModelTexture(const char* meshRelativeWysPath) const {
 GLuint GLTextureManager::GetModelTexture(int index) {
     if (index < 0 || index >= (int)m_entries.size())
         return 0;
-    if (m_textures[index])
-        return m_textures[index];
+    return LoadListTexture(m_entries[index].fileName, m_textures[index]);
+}
 
-    FILE* f = OpenAsset(m_entries[index].fileName, "rb");
-    if (!f) {
-        Log("texture missing: %s", m_entries[index].fileName);
+GLuint GLTextureManager::GetEnvTexture(int index) {
+    if (index < 0 || index >= (int)m_envEntries.size())
         return 0;
-    }
-    fseek(f, 0, SEEK_END);
-    long sz = ftell(f);
-    fseek(f, 0, SEEK_SET);
-    std::vector<uint8_t> bytes((size_t)sz);
-    if (fread(bytes.data(), 1, (size_t)sz, f) != (size_t)sz) {
-        fclose(f);
+    if (m_envEntries[index].fileName[0] == '\0')
         return 0;
-    }
-    fclose(f);
+    return LoadListTexture(m_envEntries[index].fileName, m_envTextures[index]);
+}
 
-    m_textures[index] = LoadTextureWYS(bytes.data(), bytes.size());
-    return m_textures[index];
+GLuint GLTextureManager::GetEffectTexture(int index) {
+    if (index < 0 || index >= (int)m_fxEntries.size())
+        return 0;
+    if (m_fxEntries[index].fileName[0] == '\0')
+        return 0;
+    return LoadListTexture(m_fxEntries[index].fileName, m_fxTextures[index]);
 }
 
 void GLTextureManager::DestroyAll() {
@@ -173,8 +246,20 @@ void GLTextureManager::DestroyAll() {
         if (t)
             glDeleteTextures(1, &t);
     }
+    for (GLuint t : m_envTextures) {
+        if (t)
+            glDeleteTextures(1, &t);
+    }
+    for (GLuint t : m_fxTextures) {
+        if (t)
+            glDeleteTextures(1, &t);
+    }
     m_textures.clear();
     m_entries.clear();
+    m_envTextures.clear();
+    m_envEntries.clear();
+    m_fxTextures.clear();
+    m_fxEntries.clear();
 }
 
 namespace GLSamplers {
