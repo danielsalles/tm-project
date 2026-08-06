@@ -360,3 +360,8 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+
+# port OpenGL (fase 0+)
+build/
+boot_report.txt
+tm.log
