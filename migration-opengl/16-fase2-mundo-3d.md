@@ -97,9 +97,17 @@ FileTileInfo tiles[4096]   // 12B cada, 64×64; total 49152B
   (offset = `(posX<<6)*2`, `(posY<<6)*2`).
 - Normais: `GetNormalInGround(x,y)` a partir das alturas vizinhas; bordas copiam o vizinho
   (loops de clamp em `LoadTileMap` — portar igual).
-- `dwColor` = lightmap baked por vértice. Alpha de `dwColor` = fator de blend entre
-  tile frontal (`byTileIndex`) e tile de fundo (`byBackTileIndex`, textura env
-  `byBackTileIndex + 256`) — combiner `BLENDDIFFUSEALPHA` (D3DTOP 5).
+- `dwColor` = lightmap baked por vértice. **Correção (validado no código + render)**:
+  o blend de tiles NÃO é LERP por alpha — o stage1 é `DISABLE` para tiles normais e
+  `MODULATE2X` só para lava (nIndex 38/39) e água (62-65) (`TMGround.cpp:3086-3121`).
+  As transições suaves entre tiles vêm "de fábrica" na arte dos próprios tiles
+  (`TileNNNNN.wys` inclui variantes pré-blendadas; `byTileCoord` rotaciona).
+  O alpha de `dwColor` dá translucidez de margem (SRCALPHA/INVSRCALPHA).
+- Iluminação do terreno (fixed pipe): `final = tex × (dwColor × Σluzes + emissive 0.3)`
+  — ambient da cena × material ambient(=0) não contribui; emissive é ADITIVO
+  (`TMGround.cpp:2540-2547`, block 1 `D3DRS_AMBIENT=0x33FFFFFF` com matAmb 0).
+- Winding: os triângulos do pick quad `(0,1,2)/(3,2,1)` do original leem CW (back face)
+  no window space y-up do GL — emitir a ordem invertida `(0,2,1)/(3,1,2)`.
 - `byTileCoord`/`byBackTileCoord` indexam `TileCoordList[8][4][2]`/`BackTileCoordList[32][4][2]`
   (rotações/variantes de UV — tabelas estáticas em TMGround.cpp, copiar literais).
 - Tiles especiais: lava 38/39 (stage 1 = env tex 344, scroll por tempo), água 62-65
@@ -117,12 +125,17 @@ FileTileInfo tiles[4096]   // 12B cada, 64×64; total 49152B
 ```
 struct stTextureListInfo { char szFileName[255]; char cAlpha; u32 dwLastUsedTime; u32 dwShowTime; }  // 264B
 ```
-- Arquivo tem 4096 registros (1.081.344B) mas o original lê só `sizeof(m_stEnvTextureList)`
-  = 512 registros (`fread` com count=1 do array [512]). **Ler 512.**
-- `cAlpha`: 'N' opaco, 'A' alpha, 'a' alpha 1-bit, 'C' colorkey. Texturas são `.wys`
-  (loader da Fase 1 já serve; nomes vêm com `Env\TileXXXXX.wys`).
-- Mesmo esquema para `Effect\EffectTextureList.bin` (512) e `UI\UITextureListN.bin`;
-  ModelTextureList (2048) para `.wyt` dos skinned meshes.
+- **Layout real deste client build (validado byte-a-byte)**: 2048 entradas de **528 bytes**
+  = dois registros de 264B por entrada (A = ativo, B = resíduo de nome curto). Entrada `i`
+  em `i*528`; bate com a 1ª coluna do `EnvTextureList3.txt`.
+- ⚠️ O `TextureManager.cpp` do vazamento lê `512 × 264B` contíguos — incompatível com este
+  asset (leria metades B intercaladas). O cliente shipped usa o stride 528 (ou lê o .txt).
+- `cAlpha` real no bin = 'E' (o txt diz 'N' — desatualizado). Tiles não usam alpha de
+  textura no shader; o blend de margem vem do alpha de `dwColor`.
+- Texturas `.wys` (DXT) e **`.wyt`** (ex.: idx 256 = `Tile26262.wyt`) — dispatch por
+  extensão no loader.
+- Este build não tem `Tile00002.wys`/`Tile00003.wys` (referenciados pela Field2723) →
+  textura 0 = preto, mesmo comportamento do NULL do D3D9.
 
 ### 2.3 `.wyt` — textura não-comprimida (skinned meshes, minimap)
 

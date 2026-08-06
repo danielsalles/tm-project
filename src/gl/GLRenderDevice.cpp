@@ -45,6 +45,8 @@ bool GLRenderDevice::Init(SDL_Window* window) {
     D3DXMatrixIdentity(&m_frame.view);
     D3DXMatrixIdentity(&m_frame.proj);
     SetAmbient(1.0f, 1.0f, 1.0f, 1.0f);
+    SetFog(0.0f, 0.0f, 0.0f, 0.0f, 1e9f);   // disabled by default
+    SetEmissive(0.3f, 0.3f, 0.3f);          // game material floor (non-voodoo path)
     m_frame.lightDir[0][3] = 0.0f;
     m_frame.lightDir[1][3] = 0.0f;
 
@@ -88,6 +90,22 @@ void GLRenderDevice::SetAmbient(float r, float g, float b, float a) {
     m_frame.ambient[1] = g;
     m_frame.ambient[2] = b;
     m_frame.ambient[3] = a;
+}
+
+void GLRenderDevice::SetFog(float r, float g, float b, float start, float end) {
+    m_frame.fogColor[0] = r;
+    m_frame.fogColor[1] = g;
+    m_frame.fogColor[2] = b;
+    m_frame.fogColor[3] = 1.0f;
+    m_frame.fogStart = start;
+    m_frame.fogEnd = end;
+}
+
+void GLRenderDevice::SetEmissive(float r, float g, float b) {
+    m_frame.emissive[0] = r;
+    m_frame.emissive[1] = g;
+    m_frame.emissive[2] = b;
+    m_frame.emissive[3] = 1.0f;
 }
 
 void GLRenderDevice::BeginFrame() {

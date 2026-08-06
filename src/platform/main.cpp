@@ -13,7 +13,7 @@
 #include "gl/GLRenderDevice.h"
 #include "gl/GLMesh.h"
 #include "gl/GLTexture.h"
-#include "scene/SelectServerView.h"
+#include "scene/FieldView.h"
 
 static void WriteBootReport(const char* path) {
     FILE* f = fopen(path, "w");
@@ -78,13 +78,18 @@ static void SaveScreenshot(SDL_Window* window, const char* path) {
 
 int main(int argc, char** argv) {
     // --shot <path> [frames N]: render N frames, save screenshot, exit (automation/CI)
+    // --map FieldXXYY: pick the ground/scene (default Field2723 = select-server)
     const char* shotPath = nullptr;
     int shotFrames = 30;
+    char mapName[32] = "Field2723";
     for (int i = 1; i < argc; ++i) {
         if (!strcmp(argv[i], "--shot") && i + 1 < argc)
             shotPath = argv[++i];
         else if (!strcmp(argv[i], "--frames") && i + 1 < argc)
             shotFrames = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--map") && i + 1 < argc) {
+            snprintf(mapName, sizeof mapName, "%s", argv[++i]);
+        }
     }
 
     if (!SDL_Init(SDL_INIT_VIDEO)) {
@@ -145,59 +150,73 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    // --- phase 1 scene: select-server static objects (assets are NOT in the repo) ---
+    // --- phase 2 scene: terrain + static objects of one map (assets NOT in the repo) ---
     tmx::GLTextureManager textures;
-    tmx::SelectServerView view;
+    tmx::FieldView view;
     bool sceneLoaded = false;
     {
-        std::vector<uint8_t> texList, dat;
+        std::vector<uint8_t> texList, envTexList;
         std::string meshList;
-        if (ReadWholeFile("Mesh\\MeshTextureList.bin", texList) &&
-            ReadWholeFileText("Mesh\\MeshList.txt", meshList) &&
-            ReadWholeFile("env\\Field2723.dat", dat)) {
+        if (ReadWholeFile("Mesh\\MeshTextureList.bin", texList))
             textures.LoadModelTextureList(texList.data(), texList.size());
-            sceneLoaded = view.Load(meshList, dat.data(), dat.size(), textures);
+        if (ReadWholeFile("env\\EnvTextureList3.bin", envTexList))
+            textures.LoadEnvTextureList(envTexList.data(), envTexList.size());
+        if (ReadWholeFileText("Mesh\\MeshList.txt", meshList))
+            sceneLoaded = view.Load(mapName, textures, meshList);
+        if (sceneLoaded) {
+            std::string glErr;
+            if (!view.InitGL(&glErr)) {
+                tmx::Log("FieldView InitGL falhou: %s", glErr.c_str());
+                sceneLoaded = false;
+            }
         }
         if (!sceneLoaded)
             tmx::Log("assets do jogo nao encontrados — modo fallback (triangulo)");
     }
 
-    // Fixed camera (doc 15 §7.3): placeholder framed on the scene bounds; the exact
-    // original select-server camera is a day-7 capture from the D3D client.
+    // Free-fly camera (phase 2 validation): starts above the scene center looking
+    // down; WASD moves, Q/E down/up, left-mouse drag looks, shift = fast.
     D3DXMATRIX matView, matProj;
+    float camX, camY, camZ, camYaw = 0.0f, camPitch = -0.7f;
     {
         float bmin[3], bmax[3];
         view.Bounds(bmin, bmax);
-        D3DXVECTOR3 center((bmin[0] + bmax[0]) * 0.5f,
-                           (bmin[1] + bmax[1]) * 0.5f,
-                           (bmin[2] + bmax[2]) * 0.5f);
-        if (!sceneLoaded)
-            center = D3DXVECTOR3(0.0f, 0.0f, 0.0f);
-        float radius = 10.0f;
-        if (sceneLoaded) {
-            float dx = bmax[0] - bmin[0], dz = bmax[2] - bmin[2];
-            radius = (dx > dz ? dx : dz) * 0.5f;
-            if (radius < 5.0f) radius = 5.0f;
-            if (radius > 30.0f) radius = 30.0f; // keep everything inside far=70
+        if (!sceneLoaded) {
+            bmin[0] = bmin[1] = bmin[2] = -1.0f;
+            bmax[0] = bmax[1] = bmax[2] = 1.0f;
         }
-        D3DXVECTOR3 eye(center.x, center.y + radius * 0.9f, center.z - radius * 1.4f);
-        D3DXVECTOR3 up(0.0f, 1.0f, 0.0f);
-        D3DXMatrixLookAtLH(&matView, &eye, &center, &up);
-        // game projection: fov 45deg, near 0.69*1.4, far 70 in select scenes
-        D3DXMatrixPerspectiveFovLH(&matProj, 0.25f * D3DXToRadian(180),
-                                   1024.0f / 768.0f, 0.69f * 1.4f, 70.0f);
+        camX = (bmin[0] + bmax[0]) * 0.5f;
+        camZ = (bmin[2] + bmax[2]) * 0.5f - 30.0f;
+        camY = (bmax[1] > bmin[1] ? bmax[1] : 5.0f) + 25.0f;
     }
-    device.SetViewProj(matView, matProj);
+    auto updateView = [&]() {
+        const float cp = cosf(camPitch);
+        D3DXVECTOR3 eye(camX, camY, camZ);
+        D3DXVECTOR3 dir(sinf(camYaw) * cp, sinf(camPitch), cosf(camYaw) * cp);
+        D3DXVECTOR3 at = eye + dir;
+        D3DXVECTOR3 up(0.0f, 1.0f, 0.0f);
+        D3DXMatrixLookAtLH(&matView, &eye, &at, &up);
+        device.SetViewProj(matView, matProj);
+    };
+    {
+        int pw = 0, ph = 0;
+        SDL_GetWindowSizeInPixels(window, &pw, &ph);
+        // game projection: fov 45deg, near 0.69*1.4, far 540 (field value)
+        D3DXMatrixPerspectiveFovLH(&matProj, 0.25f * D3DXToRadian(180),
+                                   (float)pw / (float)ph, 0.69f * 1.4f, 540.0f);
+    }
+    updateView();
 
-    // Scene lighting from RenderDevice's constructor defaults (RenderDevice.cpp:92-116)
+    // Scene lighting: directions from RenderDevice's constructor (RenderDevice.cpp:92-116),
+    // colors are weather-driven in the original (m_colorLight) — white until D4.
+    // Brightness model = vColor x lightSum + emissive(0.3) (D3D fixed pipe, matAmb=0).
     {
         D3DXVECTOR3 d0(-10.0f, 10.0f, -6.0f), d1(10.0f, -14.0f, 6.0f);
         D3DXVec3Normalize(&d0, &d0);
         D3DXVec3Normalize(&d1, &d1);
         device.SetDirectionalLight(0, d0, 1.0f, 1.0f, 1.0f);
         device.SetDirectionalLight(1, d1, 1.0f, 1.0f, 1.0f);
-        // ~material: diffuse 0.7 x lights, emissive 0.3 as ambient floor (TMObject.cpp:106-124)
-        device.SetAmbient(0.3f, 0.3f, 0.3f, 1.0f);
+        device.SetAmbient(1.0f, 1.0f, 1.0f, 1.0f); // block-1 D3DRS_AMBIENT=0x33FFFFFF
     }
 
     // Fallback triangle when the game assets are absent (keeps the pipeline provable).
@@ -227,6 +246,7 @@ int main(int argc, char** argv) {
     }
 
     bool running = true;
+    bool mouseLook = false;
     while (running) {
         SDL_Event e;
         while (SDL_PollEvent(&e)) {
@@ -240,20 +260,60 @@ int main(int argc, char** argv) {
                 else if (e.key.key == SDLK_F12)
                     SaveScreenshot(window, "screenshot.bmp");
                 break;
+            case SDL_EVENT_MOUSE_BUTTON_DOWN:
+                if (e.button.button == SDL_BUTTON_LEFT) {
+                    mouseLook = true;
+                    SDL_SetWindowRelativeMouseMode(window, true);
+                }
+                break;
+            case SDL_EVENT_MOUSE_BUTTON_UP:
+                if (e.button.button == SDL_BUTTON_LEFT) {
+                    mouseLook = false;
+                    SDL_SetWindowRelativeMouseMode(window, false);
+                }
+                break;
+            case SDL_EVENT_MOUSE_MOTION:
+                if (mouseLook) {
+                    camYaw   += e.motion.xrel * 0.003f;
+                    camPitch -= e.motion.yrel * 0.003f;
+                    if (camPitch >  1.5f) camPitch =  1.5f;
+                    if (camPitch < -1.5f) camPitch = -1.5f;
+                }
+                break;
             case SDL_EVENT_WINDOW_RESIZED: {
                 int w = 0, h = 0;
                 SDL_GetWindowSizeInPixels(window, &w, &h);
                 glViewport(0, 0, w, h);
                 D3DXMatrixPerspectiveFovLH(&matProj, 0.25f * D3DXToRadian(180),
-                                           (float)w / (float)h, 0.69f * 1.4f, 70.0f);
-                device.SetViewProj(matView, matProj);
+                                           (float)w / (float)h, 0.69f * 1.4f, 540.0f);
                 break;
             }
             }
         }
 
+        // WASD/QE movement, dt-scaled; shift = 4x speed
+        {
+            static Uint64 lastTicks = SDL_GetTicks();
+            const Uint64 now = SDL_GetTicks();
+            const float dt = (float)(now - lastTicks) / 1000.0f;
+            lastTicks = now;
+
+            const bool* keys = SDL_GetKeyboardState(nullptr);
+            float speed = (keys[SDL_SCANCODE_LSHIFT] || keys[SDL_SCANCODE_RSHIFT]) ? 60.0f : 15.0f;
+            const float step = speed * dt;
+            const float fwdX = sinf(camYaw), fwdZ = cosf(camYaw);
+            const float rightX = cosf(camYaw), rightZ = -sinf(camYaw);
+            if (keys[SDL_SCANCODE_W]) { camX += fwdX * step; camZ += fwdZ * step; }
+            if (keys[SDL_SCANCODE_S]) { camX -= fwdX * step; camZ -= fwdZ * step; }
+            if (keys[SDL_SCANCODE_D]) { camX += rightX * step; camZ += rightZ * step; }
+            if (keys[SDL_SCANCODE_A]) { camX -= rightX * step; camZ -= rightZ * step; }
+            if (keys[SDL_SCANCODE_E] || keys[SDL_SCANCODE_SPACE]) camY += step;
+            if (keys[SDL_SCANCODE_Q] || keys[SDL_SCANCODE_LCTRL]) camY -= step;
+        }
+        updateView();
+
         device.BeginFrame();
-        device.Clear(0.08f, 0.10f, 0.16f, 1.0f); // placeholder sky until phase 2
+        device.Clear(0.08f, 0.10f, 0.16f, 1.0f); // sky color arrives with the sky dome (D4)
 
         if (sceneLoaded) {
             view.Render(device);
@@ -273,7 +333,8 @@ int main(int argc, char** argv) {
         }
     }
 
-    tmx::Log("shutdown limpo (%d meshes carregadas)", view.MeshesLoaded());
+    tmx::Log("shutdown limpo");
+    view.Destroy();
     fallbackMesh.Destroy();
     textures.DestroyAll();
     device.Shutdown();

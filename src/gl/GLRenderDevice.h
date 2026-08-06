@@ -34,9 +34,20 @@ public:
     void SetDirectionalLight(int i, const D3DXVECTOR3& dir, float r, float g, float b);
     void SetAmbient(float r, float g, float b, float a);
 
+    // Linear fog, per frame (D3D FOGVERTEXMODE=3 on view depth). Defaults to disabled
+    // (end = 1e9). Weather drives it from TMSky::FogList (phase 2, doc 16 §D4).
+    void SetFog(float r, float g, float b, float start, float end);
+
+    // Material emissive floor, per frame (game uses 0.3 gray: TMGround.cpp:2545-2547,
+    // TMObject.cpp:106-124). Light colors follow the weather (m_colorLight) — phase 2 D4.
+    void SetEmissive(float r, float g, float b);
+
     void DrawMesh(const GLMesh& mesh);  // textures must already be resolved into mesh.subsets
 
     GLStateCache& State() { return m_state; }
+
+    // 1x1 white texture bound when a subset/env slot has no texture.
+    GLuint WhiteTexture() const { return m_whiteTex; }
 
     // Frame counters, for the smoke test and boot report.
     int DrawCallsThisFrame() const { return m_drawCalls; }
@@ -55,8 +66,12 @@ private:
         float ambient[4];
         float lightDir[2][4];  // xyz = dir, w = enabled
         float lightColor[2][4];
+        float fogColor[4];
+        float emissive[4];
+        float fogStart;
+        float fogEnd;
         float time;
-        float pad[3];
+        float pad;
     } m_frame;
 
     GLint m_locWorld     = -1;
