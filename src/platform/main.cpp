@@ -87,6 +87,8 @@ int main(int argc, char** argv) {
     char mapName[32] = "Field2723";
     int weather = -1;   // -1 = like the original select-server: day-of-month % 4
     float startPitch = -0.7f, startYaw = 0.0f;
+    float startCam[3] = { 0, 0, 0 };
+    bool startCamSet = false;
     for (int i = 1; i < argc; ++i) {
         if (!strcmp(argv[i], "--shot") && i + 1 < argc)
             shotPath = argv[++i];
@@ -101,6 +103,12 @@ int main(int argc, char** argv) {
             startPitch = (float)atof(argv[++i]);
         else if (!strcmp(argv[i], "--yaw") && i + 1 < argc)
             startYaw = (float)atof(argv[++i]);
+        else if (!strcmp(argv[i], "--cam") && i + 3 < argc) {
+            startCam[0] = (float)atof(argv[++i]);
+            startCam[1] = (float)atof(argv[++i]);
+            startCam[2] = (float)atof(argv[++i]);
+            startCamSet = true;
+        }
     }
 
     if (!SDL_Init(SDL_INIT_VIDEO)) {
@@ -166,12 +174,14 @@ int main(int argc, char** argv) {
     tmx::FieldView view;
     bool sceneLoaded = false;
     {
-        std::vector<uint8_t> texList, envTexList;
+        std::vector<uint8_t> texList, envTexList, fxTexList;
         std::string meshList;
         if (ReadWholeFile("Mesh\\MeshTextureList.bin", texList))
             textures.LoadModelTextureList(texList.data(), texList.size());
         if (ReadWholeFile("env\\EnvTextureList3.bin", envTexList))
             textures.LoadEnvTextureList(envTexList.data(), envTexList.size());
+        if (ReadWholeFile("Effect\\EffectTextureList.bin", fxTexList))
+            textures.LoadEffectTextureList(fxTexList.data(), fxTexList.size());
         if (ReadWholeFileText("Mesh\\MeshList.txt", meshList))
             sceneLoaded = view.Load(mapName, textures, meshList);
         if (sceneLoaded) {
@@ -221,6 +231,24 @@ int main(int argc, char** argv) {
         camX = (bmin[0] + bmax[0]) * 0.5f;
         camZ = (bmin[2] + bmax[2]) * 0.5f - 14.0f;
         camY = (bmax[1] > bmin[1] ? bmax[1] : 5.0f) + 8.0f;
+        if (view.HasTerrain()) {
+            // Object heights can be huge (floating decor) — start relative to the
+            // TERRAIN under the camera instead of the object bounds.
+            float tMin = 1e9f, tMax = -1e9f;
+            for (int i = 0; i < 4096; ++i) {
+                const float h = view.Terrain().tiles[i].height * 0.1f;
+                if (h < tMin) tMin = h;
+                if (h > tMax) tMax = h;
+            }
+            camY = tMax + 8.0f;
+        }
+        if (startCamSet) {
+            camX = startCam[0];
+            camY = startCam[1];
+            camZ = startCam[2];
+        }
+        tmx::Log("camera: (%.1f %.1f %.1f) bounds x[%.1f..%.1f] y[%.1f..%.1f] z[%.1f..%.1f]",
+                 camX, camY, camZ, bmin[0], bmax[0], bmin[1], bmax[1], bmin[2], bmax[2]);
     }
     auto updateView = [&]() {
         const float cp = cosf(camPitch);
@@ -347,6 +375,9 @@ int main(int argc, char** argv) {
             if (keys[SDL_SCANCODE_Q] || keys[SDL_SCANCODE_LCTRL]) camY -= step;
         }
         updateView();
+
+        if (sceneLoaded)
+            view.FrameMove((float)SDL_GetTicks() / 1000.0f);
 
         device.BeginFrame();
         {

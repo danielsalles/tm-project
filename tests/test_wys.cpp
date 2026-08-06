@@ -80,14 +80,15 @@ TEST(wys, rejects_truncated_mip_chain) {
 }
 
 TEST(wys, texture_list_lookup_case_insensitive) {
-    // 264-byte records: name[255] + cAlpha + u32 + u32
-    std::vector<uint8_t> list(264 * 3, 0);
+    // 528-byte records (A = 264B stTextureListInfo, B = residue) — this client
+    // build's real layout (doc 16 §2.2)
+    std::vector<uint8_t> list(528 * 3, 0);
     memcpy(list.data() + 0, "mesh\\Wall_One.wys", 17);
     list[255] = 'C';
-    memcpy(list.data() + 264, "MESH\\ROOF.WYS", 13);
-    list[264 + 255] = 'A';
-    memcpy(list.data() + 528, "mesh\\floor.wys", 14);
-    list[528 + 255] = 'N';
+    memcpy(list.data() + 528, "MESH\\ROOF.WYS", 13);
+    list[528 + 255] = 'A';
+    memcpy(list.data() + 1056, "mesh\\floor.wys", 14);
+    list[1056 + 255] = 'N';
 
     tmx::GLTextureManager mgr;
     EXPECT_TRUE(mgr.LoadModelTextureList(list.data(), list.size()));

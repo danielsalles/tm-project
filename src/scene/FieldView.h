@@ -5,6 +5,7 @@
 #include "scene/ObjectFile.h"
 #include "world/TerrainData.h"
 #include "world/TerrainRenderer.h"
+#include "world/SeaSurface.h"
 
 #include <string>
 #include <unordered_map>
@@ -30,9 +31,13 @@ public:
     void Render(GLRenderDevice& device);
     void Destroy();
 
+    // Advances sea waves etc. (call once per frame, seconds).
+    void FrameMove(float timeSec);
+
     const TerrainData& Terrain() const { return m_terrain; }
     bool HasTerrain() const { return m_hasTerrain; }
     int  ObjectCount() const { return (int)m_objects.size(); }
+    int  SeaCount() const { return (int)m_seas.size(); }
 
     // World bounds across terrain+objects (for the initial camera).
     void Bounds(float* minXYZ, float* maxXYZ) const;
@@ -47,12 +52,21 @@ private:
         float x, y, z;
         float angle;
     };
+    struct SeaDesc {
+        int gridX, gridY;
+        float x, h, z;
+    };
 
     GLMesh* GetMesh(int index, GLTextureManager& textures);
 
     TerrainData     m_terrain;
     TerrainRenderer m_terrainRenderer;
     bool            m_hasTerrain = false;
+
+    std::vector<SeaSurface> m_seas;
+    std::vector<SeaDesc>    m_seaDescs;
+    GLShader    m_seaShader;
+    GLint       m_locSeaWorld = -1, m_locSeaTex0 = -1, m_locSeaTex1 = -1;
 
     std::vector<Object> m_objects;
     std::unordered_map<int, std::string> m_meshFiles;

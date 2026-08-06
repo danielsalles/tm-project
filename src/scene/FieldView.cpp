@@ -3,6 +3,8 @@
 #include "gl/GLRenderDevice.h"
 #include "platform/Platform.h"
 
+#include "shaders_embedded.h"
+
 #include <cstdio>
 #include <cstring>
 #include <vector>
@@ -101,8 +103,10 @@ bool FieldView::Load(const char* mapName, GLTextureManager& textures,
                 "Leaf", "Tree", "Ship", "House", "TorchEffect",
             };
             for (int k = 1; k < 10; ++k) {
+                if (k == (int)ObjectKind::Sea)
+                    continue;   // collected into m_seaDescs above
                 if (file.skipped[k])
-                    Log("FieldView: pulando %d objetos do tipo %s (D5-D8)",
+                    Log("FieldView: pulando %d objetos do tipo %s (D6-D8/fase 4)",
                         file.skipped[k], kKindName[k]);
             }
 
@@ -111,7 +115,13 @@ bool FieldView::Load(const char* mapName, GLTextureManager& textures,
             const float offX = m_terrain.OffsetX();
             const float offY = m_terrain.OffsetY();
             for (const auto& r : file.records) {
-                if (ClassifyObjectType(r.dwObjType) != ObjectKind::GenericStatic)
+                const ObjectKind kind = ClassifyObjectType(r.dwObjType);
+                if (kind == ObjectKind::Sea) {
+                    m_seaDescs.push_back({ r.nMaskIndex / 2, r.nTextureSetIndex / 2,
+                                           offX + r.posX, r.fHeight, offY + r.posY });
+                    continue;
+                }
+                if (kind != ObjectKind::GenericStatic)
                     continue;
                 Object o;
                 o.meshIndex = (int)r.dwObjType;
@@ -160,6 +170,17 @@ bool FieldView::InitGL(std::string* err) {
         return false;
     if (m_hasTerrain && !m_terrainRenderer.Build(m_terrain, err))
         return false;
+    if (!m_seaShader.Build(kCommonGlsl, kSeaVert, kSeaFrag, err))
+        return false;
+    m_locSeaWorld = m_seaShader.UniformLoc("uWorld");
+    m_locSeaTex0  = m_seaShader.UniformLoc("uTex0");
+    m_locSeaTex1  = m_seaShader.UniformLoc("uTex1");
+    m_seas.resize(m_seaDescs.size());
+    for (size_t i = 0; i < m_seaDescs.size(); ++i) {
+        if (!m_seas[i].Init(m_seaDescs[i].gridX, m_seaDescs[i].gridY,
+                            m_seaDescs[i].x, m_seaDescs[i].h, m_seaDescs[i].z, err))
+            return false;
+    }
     return true;
 }
 
@@ -222,10 +243,24 @@ void FieldView::Render(GLRenderDevice& device) {
         device.SetWorldMatrix(world);
         device.DrawMesh(*mesh);
     }
+
+    // Seas last: additive-ish shimmer over the opaque scene (TMSea blend).
+    for (auto& sea : m_seas)
+        sea.Render(device, *m_textures, m_seaShader,
+                   m_locSeaWorld, m_locSeaTex0, m_locSeaTex1);
+}
+
+void FieldView::FrameMove(float timeSec) {
+    for (auto& sea : m_seas)
+        sea.FrameMove(timeSec);
 }
 
 void FieldView::Destroy() {
     m_terrainRenderer.Destroy();
+    m_seaShader.Destroy();
+    for (auto& sea : m_seas)
+        sea.Destroy();
+    m_seas.clear();
     for (auto& [_, mesh] : m_meshes)
         mesh.Destroy();
     m_meshes.clear();

@@ -48,6 +48,9 @@ public:
     // validated against EnvTextureList3.txt. Indices match the txt's first column.
     bool LoadEnvTextureList(const uint8_t* data, size_t size);
 
+    // Loads Effect\EffectTextureList.bin — same 528-byte A/B record layout.
+    bool LoadEffectTextureList(const uint8_t* data, size_t size);
+
     // Case-insensitive lookup of "mesh\<name>.wys". -1 when missing (mirrors
     // TextureManager::GetModelTextureIndex semantics).
     int FindModelTexture(const char* meshRelativeWysPath) const;
@@ -63,6 +66,7 @@ public:
     // Returns 0 when the file is missing/unreadable.
     GLuint GetModelTexture(int index);
     GLuint GetEnvTexture(int index);
+    GLuint GetEffectTexture(int index);
 
     // Raw list file name (for debugging / weather-driven overrides).
     const char* ModelTextureFileName(int index) const {
@@ -72,10 +76,16 @@ public:
     void DestroyAll();
 
 private:
+    // Shared loader for the 528-byte-record lists (A half = stTextureListInfo).
+    bool LoadList528(const uint8_t* data, size_t size, size_t maxEntries,
+                     std::vector<TextureListEntry>& entries, std::vector<GLuint>& textures);
+
     std::vector<TextureListEntry> m_entries;
     std::vector<GLuint>           m_textures; // parallel to m_entries, 0 = not loaded
     std::vector<TextureListEntry> m_envEntries;
     std::vector<GLuint>           m_envTextures;
+    std::vector<TextureListEntry> m_fxEntries;
+    std::vector<GLuint>           m_fxTextures;
 };
 
 // Sampler objects for the phase-1 state blocks (10 §10.4).

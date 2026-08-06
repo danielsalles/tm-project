@@ -154,54 +154,42 @@ GLuint LoadTextureWYS(const uint8_t* fileBytes, size_t size) {
     return tex;
 }
 
-bool GLTextureManager::LoadModelTextureList(const uint8_t* data, size_t size) {
-    // Same 528-byte A/B record layout as the env list (validated on
-    // MeshTextureList.bin: index 67 = "mesh\hs0050.wys" etc.).
+bool GLTextureManager::LoadList528(const uint8_t* data, size_t size, size_t maxEntries,
+                                   std::vector<TextureListEntry>& entries,
+                                   std::vector<GLuint>& textures) {
     constexpr size_t kEntry = 528;
     size_t count = size / kEntry;
-    if (count > 4096)
-        count = 4096;
+    if (count > maxEntries)
+        count = maxEntries;
 
-    m_entries.resize(count);
-    m_textures.assign(count, 0);
+    entries.resize(count);
+    textures.assign(count, 0);
     for (size_t i = 0; i < count; ++i) {
-        const uint8_t* p = data + i * kEntry;
-        memcpy(m_entries[i].fileName, p, 255);
-        m_entries[i].fileName[254] = '\0';
-        m_entries[i].cAlpha = (char)p[255];
-        m_entries[i].dwLastUsedTime = ReadU32(p + 256);
-        m_entries[i].dwShowTime = ReadU32(p + 260);
-        if (m_entries[i].cAlpha == 0 || m_entries[i].cAlpha == (char)0xCD)
-            m_entries[i].cAlpha = 'N';
+        const uint8_t* p = data + i * kEntry;   // A half
+        memcpy(entries[i].fileName, p, 255);
+        entries[i].fileName[254] = '\0';
+        entries[i].cAlpha = (char)p[255];
+        entries[i].dwLastUsedTime = ReadU32(p + 256);
+        entries[i].dwShowTime = ReadU32(p + 260);
+        if (entries[i].cAlpha == 0 || entries[i].cAlpha == (char)0xCD)
+            entries[i].cAlpha = 'N';
     }
     return count > 0;
 }
 
-bool GLTextureManager::LoadEnvTextureList(const uint8_t* data, size_t size) {
-    // REAL layout of this client build's EnvTextureList3.bin: 2048 entries of
-    // 528 bytes = two consecutive 264B stTextureListInfo records (A = active,
-    // B = short-name residue). Validated against EnvTextureList3.txt: entry i
-    // lives at i*528. The original's fread of 512*264 only covers indices
-    // 0..127 interleaved with B halves — an upstream-format mismatch in the
-    // leaked source; the shipped client evidently uses the 528 stride.
-    constexpr size_t kEntry = 528;
-    size_t count = size / kEntry;
-    if (count > 2048)
-        count = 2048;
+bool GLTextureManager::LoadModelTextureList(const uint8_t* data, size_t size) {
+    // 528-byte A/B record layout (validated on MeshTextureList.bin).
+    return LoadList528(data, size, 4096, m_entries, m_textures);
+}
 
-    m_envEntries.resize(count);
-    m_envTextures.assign(count, 0);
-    for (size_t i = 0; i < count; ++i) {
-        const uint8_t* p = data + i * kEntry;   // A half
-        memcpy(m_envEntries[i].fileName, p, 255);
-        m_envEntries[i].fileName[254] = '\0';
-        m_envEntries[i].cAlpha = (char)p[255];
-        m_envEntries[i].dwLastUsedTime = ReadU32(p + 256);
-        m_envEntries[i].dwShowTime = ReadU32(p + 260);
-        if (m_envEntries[i].cAlpha == 0 || m_envEntries[i].cAlpha == (char)0xCD)
-            m_envEntries[i].cAlpha = 'N';
-    }
-    return count > 0;
+bool GLTextureManager::LoadEnvTextureList(const uint8_t* data, size_t size) {
+    // Validated against EnvTextureList3.txt: entry i at i*528 (doc 16 §2.2).
+    return LoadList528(data, size, 2048, m_envEntries, m_envTextures);
+}
+
+bool GLTextureManager::LoadEffectTextureList(const uint8_t* data, size_t size) {
+    // Effect\EffectTextureList.bin — same layout (600 entries in this build).
+    return LoadList528(data, size, 1024, m_fxEntries, m_fxTextures);
 }
 
 int GLTextureManager::FindModelTexture(const char* meshRelativeWysPath) const {
@@ -238,6 +226,14 @@ GLuint GLTextureManager::GetEnvTexture(int index) {
     return LoadListTexture(m_envEntries[index].fileName, m_envTextures[index]);
 }
 
+GLuint GLTextureManager::GetEffectTexture(int index) {
+    if (index < 0 || index >= (int)m_fxEntries.size())
+        return 0;
+    if (m_fxEntries[index].fileName[0] == '\0')
+        return 0;
+    return LoadListTexture(m_fxEntries[index].fileName, m_fxTextures[index]);
+}
+
 void GLTextureManager::DestroyAll() {
     for (GLuint t : m_textures) {
         if (t)
@@ -247,10 +243,16 @@ void GLTextureManager::DestroyAll() {
         if (t)
             glDeleteTextures(1, &t);
     }
+    for (GLuint t : m_fxTextures) {
+        if (t)
+            glDeleteTextures(1, &t);
+    }
     m_textures.clear();
     m_entries.clear();
     m_envTextures.clear();
     m_envEntries.clear();
+    m_fxTextures.clear();
+    m_fxEntries.clear();
 }
 
 namespace GLSamplers {
