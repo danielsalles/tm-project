@@ -2,12 +2,17 @@
 
 #include "gl/GLMesh.h"
 #include "gl/GLTexture.h"
+#include "gl/SkinPipeline.h"
 #include "scene/ObjectFile.h"
+#include "world/AniSound.h"
+#include "world/Character.h"
+#include "world/CharacterMesh.h"
 #include "world/TerrainData.h"
 #include "world/TerrainRenderer.h"
 #include "world/SeaSurface.h"
 #include "world/TreeRenderer.h"
 
+#include <memory>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -48,6 +53,18 @@ public:
     TerrainData& TerrainMutable() { return m_terrain; }
     void RefreshTerrainColors() { m_terrainRenderer.RefreshColors(m_terrain); }
 
+    // Phase 3: characters. Call InitCharacters after Load (aniSoundTxt =
+    // AniSound4.txt contents); Spawn adds a character on the terrain mask.
+    bool InitCharacters(const std::string& boneAniListTxt, const std::string& aniSoundTxt,
+                        GLTextureManager& textures, std::string* err);
+    Character* Spawn(const CharDesc& d, float x, float z, std::string* err);
+    void RemoveCharacter(Character* c);
+    CharacterAnimationCache& CharCache() { return m_charCache; }
+    const AniSoundData& AniSound() const { return m_aniSound; }
+    bool HasCharacters() const { return m_charReady; }
+    size_t CharacterCount() const { return m_chars.size(); }
+    Character* GetCharacter(size_t i) { return i < m_chars.size() ? m_chars[i].get() : nullptr; }
+
 private:
     struct Object {
         int   meshIndex;
@@ -79,6 +96,13 @@ private:
     std::unordered_map<int, std::string> m_meshFiles;
     std::unordered_map<int, GLMesh>      m_meshes;
     GLTextureManager* m_textures = nullptr;
+
+    // Phase 3 characters.
+    CharacterAnimationCache m_charCache;
+    AniSoundData            m_aniSound;
+    SkinPipeline            m_charPipe;
+    std::vector<std::unique_ptr<Character>> m_chars;
+    bool m_charReady = false;
 
     float m_lastTimeMs = 0.0f;
     float m_bmin[3] = { 0, 0, 0 };

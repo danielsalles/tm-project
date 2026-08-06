@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "gl/GLShader.h"
+#include "gl/SkinPipeline.h"
 #include "world/BoneAnimation.h"
 #include "world/SkinMesh.h"
 
@@ -48,9 +49,7 @@ private:
     // Cache key includes the look overrides: mesh/skin looks change the file suffix.
     bool LoadSet(const Instance& inst, std::string* err);
 
-    GLShader m_shader;
-    GLint m_locNumInfluence = -1, m_locTex0 = -1, m_locAlphaRef = -1, m_locAlphaTest = -1;
-    GLuint m_uboBones = 0;
+    SkinPipeline m_pipe;
     GLTextureManager* m_textures = nullptr;
 
     struct BoneAniInfo { int parts; std::string prefix; };

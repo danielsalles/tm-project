@@ -1,11 +1,8 @@
 #include "world/TreeRenderer.h"
 
 #include "gl/GLRenderDevice.h"
-#include "gl/GLStateCache.h"
 #include "gl/GLTexture.h"
 #include "platform/Platform.h"
-
-#include "shaders_embedded.h"
 
 #include <cstdio>
 #include <cstring>
@@ -34,25 +31,8 @@ bool TreeRenderer::Init(const std::string& boneAniListTxt, GLTextureManager& tex
                         std::string* err) {
     m_textures = &textures;
 
-    if (!m_shader.Build(kCommonGlsl, kSkinVert, kSkinFrag, err))
+    if (!m_pipe.Init(err))
         return false;
-    m_locNumInfluence = m_shader.UniformLoc("uNumInfluence");
-    m_locTex0         = m_shader.UniformLoc("uTex0");
-    m_locAlphaRef     = m_shader.UniformLoc("uAlphaRef");
-    m_locAlphaTest    = m_shader.UniformLoc("uAlphaTest");
-
-    GLuint blockIdx = glGetUniformBlockIndex(m_shader.Program(), "BonePalette");
-    if (blockIdx == GL_INVALID_INDEX) {
-        *err = "skin shader: no BonePalette block";
-        return false;
-    }
-    glUniformBlockBinding(m_shader.Program(), blockIdx, 1);
-
-    glGenBuffers(1, &m_uboBones);
-    glBindBuffer(GL_UNIFORM_BUFFER, m_uboBones);
-    glBufferData(GL_UNIFORM_BUFFER, 40 * 64, nullptr, GL_DYNAMIC_DRAW);
-    glBindBufferBase(GL_UNIFORM_BUFFER, 1, m_uboBones);
-    glBindBuffer(GL_UNIFORM_BUFFER, 0);
 
     // BoneAni4.txt: "<idx> <numAniTypes> <numParts> <prefix>"
     const char* p = boneAniListTxt.c_str();
@@ -168,22 +148,8 @@ void TreeRenderer::Render(GLRenderDevice& device, float timeMs) {
     if (m_instances.empty())
         return;
 
-    GLStateCache& st = device.State();
     // TMTree::Render: alpha test 0xAA, depth on+write, cull back, no blend.
-    st.depthTest = true;
-    st.depthWrite = true;
-    st.depthFunc = GL_LEQUAL;
-    st.blend = false;
-    st.cull = true;
-    st.cullFaceMode = GL_BACK;
-    st.alphaTest = true;
-    st.alphaRef = 170.0f;   // 0xAA
-    st.sampler[0] = GLSamplers::LinearMip();
-
-    m_shader.Bind();
-    glUniform1i(m_locTex0, 0);
-    glUniform1f(m_locAlphaRef, st.alphaRef);
-    glUniform1i(m_locAlphaTest, 1);
+    m_pipe.Begin(device, 170.0f);   // 0xAA
 
     for (const Instance& inst : m_instances) {
         std::string err;
@@ -210,37 +176,14 @@ void TreeRenderer::Render(GLRenderDevice& device, float timeMs) {
 
         SampleBoneAni(bones, timeMs, world);
 
-        for (size_t part = 0; part < set.parts.size(); ++part) {
-            GLSkinMesh& m = set.parts[part];
-            // palette[i] = bindInv[i] x combined[frameId[i]]  (D3D row order)
-            D3DXMATRIX palette[40];
-            for (uint32_t i = 0; i < m.numPalette; ++i) {
-                const uint32_t fid = m.boneFrameId[i];
-                const D3DXMATRIX& comb = fid < bones.combined.size()
-                    ? bones.combined[fid] : world;
-                D3DXMatrixMultiply(&palette[i], &m.boneBindInv[i], &comb);
-            }
-            glBindBuffer(GL_UNIFORM_BUFFER, m_uboBones);
-            glBufferSubData(GL_UNIFORM_BUFFER, 0, m.numPalette * 64, palette);
-            glBindBuffer(GL_UNIFORM_BUFFER, 0);
-
-            glUniform1i(m_locNumInfluence, (int)m.numInfluence);
-            st.texture[0] = set.textures[part];
-            st.Apply();
-
-            glBindVertexArray(m.vao);
-            glDrawElements(GL_TRIANGLES, m.indexCount, GL_UNSIGNED_SHORT, nullptr);
-            glBindVertexArray(0);
-        }
+        for (size_t part = 0; part < set.parts.size(); ++part)
+            m_pipe.DrawPart(device, set.parts[part], set.textures[part],
+                            bones.combined, world);
     }
 }
 
 void TreeRenderer::Destroy() {
-    m_shader.Destroy();
-    if (m_uboBones) {
-        glDeleteBuffers(1, &m_uboBones);
-        m_uboBones = 0;
-    }
+    m_pipe.Destroy();
     for (auto& [_, set] : m_sets) {
         for (auto& part : set.parts)
             part.Destroy();

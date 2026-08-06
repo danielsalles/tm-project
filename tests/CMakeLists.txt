@@ -9,7 +9,12 @@ add_executable(tm_tests
   test_trn.cpp
   test_envtex.cpp
   test_msh.cpp
-  test_picking.cpp)
+  test_picking.cpp
+  test_anisound.cpp
+  test_charani.cpp
+  test_look.cpp
+  test_route.cpp
+  test_character.cpp)
 target_link_libraries(tm_tests PRIVATE tmcore tmgl)
 
 # dados dourados acessíveis por path relativo ao diretório do teste
@@ -31,4 +36,9 @@ add_test(NAME trn        COMMAND tm_tests trn)
 add_test(NAME envtex     COMMAND tm_tests envtex)
 add_test(NAME msh        COMMAND tm_tests msh)
 add_test(NAME picking    COMMAND tm_tests picking)
+add_test(NAME anisound   COMMAND tm_tests anisound)
+add_test(NAME charani    COMMAND tm_tests charani)
+add_test(NAME look       COMMAND tm_tests look)
+add_test(NAME route      COMMAND tm_tests route)
+add_test(NAME character  COMMAND tm_tests character)
 add_test(NAME glsmoke    COMMAND tm_glsmoke)

@@ -81,11 +81,18 @@ add_library(tmgl STATIC
   src/gl/GLRenderDevice.cpp
   src/gl/GLMesh.cpp
   src/gl/GLTexture.cpp
+  src/gl/SkinPipeline.cpp
   src/world/TerrainData.cpp
   src/world/TerrainRenderer.cpp
   src/world/SkyDome.cpp
   src/world/SeaSurface.cpp
   src/world/SkinMesh.cpp
+  src/world/AniSound.cpp
+  src/world/CharacterAnimation.cpp
+  src/world/LookResolver.cpp
+  src/world/CharacterMesh.cpp
+  src/world/Route.cpp
+  src/world/Character.cpp
   src/world/BoneAnimation.cpp
   src/world/TreeRenderer.cpp
   src/scene/ObjectFile.cpp

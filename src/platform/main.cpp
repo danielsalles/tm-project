@@ -83,6 +83,9 @@ static void SaveScreenshot(SDL_Window* window, const char* path) {
 int main(int argc, char** argv) {
     // --shot <path> [frames N]: render N frames, save screenshot, exit (automation/CI)
     // --map FieldXXYY: pick the ground/scene (default Field2723 = select-server)
+    // --nochar: disable the playable character (phase 3)
+    // --spawn type,x,z: extra character/monster (repeatable)
+    // --follow/--nofollow: follow camera (default on when a character exists)
     const char* shotPath = nullptr;
     int shotFrames = 30;
     char mapName[32] = "Field2723";
@@ -90,6 +93,13 @@ int main(int argc, char** argv) {
     float startPitch = -0.7f, startYaw = 0.0f;
     float startCam[3] = { 0, 0, 0 };
     bool startCamSet = false;
+    bool spawnChar = true;
+    int followCam = -1;   // -1 = auto (on when char exists)
+    struct SpawnReq { int type; float x, z; };
+    std::vector<SpawnReq> spawnReqs;
+    float walkTo[2] = { 0, 0 };
+    bool walkToSet = false;
+    int startWeapon = 0;
     for (int i = 1; i < argc; ++i) {
         if (!strcmp(argv[i], "--shot") && i + 1 < argc)
             shotPath = argv[++i];
@@ -110,6 +120,24 @@ int main(int argc, char** argv) {
             startCam[2] = (float)atof(argv[++i]);
             startCamSet = true;
         }
+        else if (!strcmp(argv[i], "--nochar"))
+            spawnChar = false;
+        else if (!strcmp(argv[i], "--follow"))
+            followCam = 1;
+        else if (!strcmp(argv[i], "--nofollow"))
+            followCam = 0;
+        else if (!strcmp(argv[i], "--spawn") && i + 1 < argc) {
+            SpawnReq r{};
+            if (sscanf(argv[++i], "%d,%f,%f", &r.type, &r.x, &r.z) == 3)
+                spawnReqs.push_back(r);
+        }
+        else if (!strcmp(argv[i], "--walkto") && i + 2 < argc) {
+            walkTo[0] = (float)atof(argv[++i]);
+            walkTo[1] = (float)atof(argv[++i]);
+            walkToSet = true;
+        }
+        else if (!strcmp(argv[i], "--weapon") && i + 1 < argc)
+            startWeapon = atoi(argv[++i]);
     }
 
     if (!SDL_Init(SDL_INIT_VIDEO)) {
@@ -202,6 +230,47 @@ int main(int argc, char** argv) {
             tmx::Log("assets do jogo nao encontrados — modo fallback (triangulo)");
     }
 
+    // --- phase 3: characters (own char + --spawn extras) ---
+    tmx::Character* myChar = nullptr;
+    if (sceneLoaded) {
+        std::string aniSoundTxt;
+        std::string boneAniTxt;
+        ReadWholeFileText("Mesh\\BoneAni4.txt", boneAniTxt);
+        bool charSys = false;
+        {
+            std::vector<uint8_t> raw;
+            if (ReadWholeFile("AniSound4.txt", raw))
+                aniSoundTxt.assign((const char*)raw.data(), raw.size());
+        }
+        std::string charErr;
+        if (!aniSoundTxt.empty())
+            charSys = view.InitCharacters(boneAniTxt, aniSoundTxt, textures, &charErr);
+        if (charSys) {
+            // Own character: ch01, TK look padrão, centro do mapa.
+            const float cx = view.Terrain().OffsetX() + 64.0f;
+            const float cz = view.Terrain().OffsetY() + 64.0f;
+            if (spawnChar) {
+                tmx::CharDesc d;
+                d.weaponIndex = startWeapon;
+                myChar = view.Spawn(d, cx, cz, &charErr);
+                if (myChar)
+                    tmx::Log("char spawn: (%.1f, %.1f)", cx, cz);
+                else
+                    tmx::Log("char spawn falhou: %s", charErr.c_str());
+            }
+            for (const auto& r : spawnReqs) {
+                tmx::CharDesc d;
+                d.boneAniIndex = r.type;
+                if (!view.Spawn(d, r.x, r.z, &charErr))
+                    tmx::Log("spawn %d falhou: %s", r.type, charErr.c_str());
+            }
+        } else if (!charErr.empty()) {
+            tmx::Log("characters: %s", charErr.c_str());
+        }
+    }
+    bool follow = followCam >= 0 ? (followCam != 0) : (myChar != nullptr);
+    float followDist = 6.0f;
+
     // Sky dome + weather (phase 2 D4). Default weather = day-of-month % 4 like the
     // original select-server scene (TMSelectServerScene.cpp:323-325).
     tmx::SkyDome sky;
@@ -258,12 +327,25 @@ int main(int argc, char** argv) {
                  camX, camY, camZ, bmin[0], bmax[0], bmin[1], bmax[1], bmin[2], bmax[2]);
     }
     auto updateView = [&]() {
-        const float cp = cosf(camPitch);
-        D3DXVECTOR3 eye(camX, camY, camZ);
-        D3DXVECTOR3 dir(sinf(camYaw) * cp, sinf(camPitch), cosf(camYaw) * cp);
-        D3DXVECTOR3 at = eye + dir;
-        D3DXVECTOR3 up(0.0f, 1.0f, 0.0f);
-        D3DXMatrixLookAtLH(&matView, &eye, &at, &up);
+        if (follow && myChar) {
+            // Orbit the character: eye = target - dir * dist (target at chest height).
+            const float tx = myChar->X(), ty = myChar->Height() + 1.5f, tz = myChar->Z();
+            const float cp = cosf(camPitch);
+            D3DXVECTOR3 dir(sinf(camYaw) * cp, sinf(camPitch), cosf(camYaw) * cp);
+            D3DXVECTOR3 eye(tx - dir.x * followDist, ty - dir.y * followDist,
+                            tz - dir.z * followDist);
+            D3DXVECTOR3 at(tx, ty, tz);
+            D3DXVECTOR3 up(0.0f, 1.0f, 0.0f);
+            camX = eye.x; camY = eye.y; camZ = eye.z;
+            D3DXMatrixLookAtLH(&matView, &eye, &at, &up);
+        } else {
+            const float cp = cosf(camPitch);
+            D3DXVECTOR3 eye(camX, camY, camZ);
+            D3DXVECTOR3 dir(sinf(camYaw) * cp, sinf(camPitch), cosf(camYaw) * cp);
+            D3DXVECTOR3 at = eye + dir;
+            D3DXVECTOR3 up(0.0f, 1.0f, 0.0f);
+            D3DXMatrixLookAtLH(&matView, &eye, &at, &up);
+        }
         device.SetViewProj(matView, matProj);
     };
     {
@@ -330,6 +412,58 @@ int main(int argc, char** argv) {
                     running = false;
                 else if (e.key.key == SDLK_F12)
                     SaveScreenshot(window, "screenshot.bmp");
+                else if (e.key.key == SDLK_F) {
+                    if (myChar) {
+                        follow = !follow;
+                        if (!follow) {   // keep the view where the follow cam left it
+                            camPitch = -0.7f;
+                        }
+                    }
+                }
+                else if (myChar) {
+                    const uint32_t nowMs = SDL_GetTicks();
+                    switch (e.key.key) {
+                    case SDLK_R: {   // walk/run toggle
+                        const bool run = myChar->MaxSpeed() <= 2.0f;
+                        myChar->SetMaxSpeed(run ? 4.0f : 2.0f);
+                        break;
+                    }
+                    case SDLK_1: myChar->SetMotion(tmx::CharMotion::Attack01, nowMs); break;
+                    case SDLK_2: myChar->SetMotion(tmx::CharMotion::Attack02, nowMs); break;
+                    case SDLK_3: myChar->SetMotion(tmx::CharMotion::Attack03, nowMs); break;
+                    case SDLK_4: myChar->SetMotion(tmx::CharMotion::Attack04, nowMs); break;
+                    case SDLK_5: myChar->SetMotion(tmx::CharMotion::Attack05, nowMs); break;
+                    case SDLK_6: myChar->SetMotion(tmx::CharMotion::Attack06, nowMs); break;
+                    case SDLK_8: myChar->SetMotion(tmx::CharMotion::Stand01, nowMs); break;
+                    case SDLK_9: myChar->SetMotion(tmx::CharMotion::LevelUp, nowMs); break;
+                    case SDLK_0: myChar->SetMotion(tmx::CharMotion::Die, nowMs); break;
+                    case SDLK_P: {   // cycle weapon (demo)
+                        tmx::CharDesc d = myChar->Desc();
+                        d.weaponIndex = (d.weaponIndex + 1) % 12;
+                        const float px = myChar->X(), pz = myChar->Z();
+                        view.RemoveCharacter(myChar);
+                        myChar = view.Spawn(d, px, pz, nullptr);
+                        break;
+                    }
+                    case SDLK_C: {   // cycle class (TK/Foema/BM/Hunter demo)
+                        static const int kPairs[4][2] = {
+                            { 0, 0 }, { 1, 1 }, { 0, 2 }, { 1, 3 } };  // (type, class)
+                        tmx::CharDesc d = myChar->Desc();
+                        int cur = 0;
+                        for (int i = 0; i < 4; ++i)
+                            if (kPairs[i][0] == d.boneAniIndex && kPairs[i][1] == d.classIndex)
+                                cur = i;
+                        cur = (cur + 1) % 4;
+                        d.boneAniIndex = kPairs[cur][0];
+                        d.classIndex = kPairs[cur][1];
+                        const float px = myChar->X(), pz = myChar->Z();
+                        view.RemoveCharacter(myChar);
+                        myChar = view.Spawn(d, px, pz, nullptr);
+                        break;
+                    }
+                    default: break;
+                    }
+                }
                 break;
             case SDL_EVENT_MOUSE_BUTTON_DOWN:
                 if (e.button.button == SDL_BUTTON_LEFT) {
@@ -366,10 +500,12 @@ int main(int argc, char** argv) {
                     float hit[3];
                     const float ro[3] = { pn.x, pn.y, pn.z };
                     const float rd[3] = { dir.x, dir.y, dir.z };
-                    if (tmx::TerrainPick(view.Terrain(), camX, camZ, ro, rd, hit))
-                        tmx::Log("pick: (%.2f, %.2f, %.2f)", hit[0], hit[1], hit[2]);
-                    else
+                    if (tmx::TerrainPick(view.Terrain(), camX, camZ, ro, rd, hit)) {
+                        if (myChar && !myChar->MoveTo(hit[0], hit[2], SDL_GetTicks()))
+                            tmx::Log("move: sem rota para (%.1f, %.1f)", hit[0], hit[2]);
+                    } else {
                         tmx::Log("pick: nada");
+                    }
                 }
                 break;
             case SDL_EVENT_MOUSE_MOTION:
@@ -378,6 +514,13 @@ int main(int argc, char** argv) {
                     camPitch -= e.motion.yrel * 0.003f;
                     if (camPitch >  1.5f) camPitch =  1.5f;
                     if (camPitch < -1.5f) camPitch = -1.5f;
+                }
+                break;
+            case SDL_EVENT_MOUSE_WHEEL:
+                if (follow) {
+                    followDist -= e.wheel.y * 0.8f;
+                    if (followDist < 3.0f) followDist = 3.0f;
+                    if (followDist > 14.0f) followDist = 14.0f;
                 }
                 break;
             case SDL_EVENT_WINDOW_RESIZED: {
@@ -391,8 +534,8 @@ int main(int argc, char** argv) {
             }
         }
 
-        // WASD/QE movement, dt-scaled; shift = 4x speed
-        {
+        // WASD/QE movement, dt-scaled; shift = 4x speed (free-fly only)
+        if (!follow) {
             static Uint64 lastTicks = SDL_GetTicks();
             const Uint64 now = SDL_GetTicks();
             const float dt = (float)(now - lastTicks) / 1000.0f;
@@ -414,6 +557,10 @@ int main(int argc, char** argv) {
 
         if (sceneLoaded)
             view.FrameMove((float)SDL_GetTicks() / 1000.0f);
+
+        static int frameNo = 0;
+        if (walkToSet && myChar && ++frameNo == 3)
+            myChar->MoveTo(walkTo[0], walkTo[1], SDL_GetTicks());
 
         device.BeginFrame();
         {
