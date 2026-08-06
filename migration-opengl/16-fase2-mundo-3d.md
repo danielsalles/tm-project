@@ -1,4 +1,4 @@
-# 16 — Fase 2: Mundo 3D (plano completo)
+# 16 — Fase 2: Mundo 3D (plano completo) — **CONCLUÍDA**
 
 **Objetivo**: renderizar o mundo estático/ambiente do jogo completo em GL — **terreno**
 (`.trn`, blend de 2 tiles por alpha de vértice, cor de vértice como lightmap baked),
@@ -9,31 +9,26 @@ terreno** (matemática pura). Cena alvo: select-server (Field2723) completa + `F
 com câmera livre para validar qualquer mapa (Field0101 tem árvores/casas; Field1616 tem
 mar/floats).
 
-**Critério de saída (definition of done)**:
-- [ ] Loader `.trn` (FileTileInfo 12B × 4096, header nome+pos) + normais por vértice +
-      `m_pMaskData` 128×128; teste com blob sintético + parse do `Field2723.trn` real no CI
-- [ ] Shader `terrain`: 2 texturas blendadas por alpha de vértice (`BLENDDIFFUSEALPHA`),
-      `dwColor` como diffuse material × 2 luzes direcionais, fog; batches por par de
-      texturas (não 4096 draw calls como o original)
-- [ ] `EnvTextureList3.bin` (512 × 264B) + UVs rotacionados (`TileCoordList`) +
-      tiles especiais (lava 38/39 com scroll, água 62-65)
-- [ ] Céu: domo `sky001.msa` (mesh idx 1), texturas env 67-70 por clima, `FogList[16][2]`,
-      `m_dwClearColor` por clima, `m_colorLight`; fog integrado ao `FrameData` UBO
-- [ ] Mar: grid procedural (sem arquivo — gerado de `fScaleH/fScaleV` do registro `.dat`
-      tipo 2), FVF 578 (pos+diffuse+2uv), onda `sin` animada, alpha blend
-- [ ] Loader `.wyt` ("WT10" + TGA sem footer — stb_image decodifica) + `ModelTextureList`
-- [ ] Loaders `.bon` (hierarquia pares u32) + `.ani` (ticks, frames, matrizes/frame) +
-      `.msh` (header 8×u32, palette bone offsets, vértices, índices u16); testes sintéticos
-- [ ] Skinning GLSL: LBS 1-4 pesos, palette ≤40 ossos em UBO dedicado (binding 1),
-      80 FPS de amostragem como o original; árvores balançando em Field0101
-- [ ] Roteamento de `dwObjType` completo para geometria: TMTree (331-342, 351-378),
-      TMHouse (tabela de 27 tipos), TMShip (487-489), TMFloat (3, 5), TMSea (2)
-- [ ] `GroundGetColor`/`GroundSetColor` (tint de lâmpadas 501-503 escreve em `dwColor`)
-      + emissive de objetos via cor do terreno
-- [ ] `GetHeight` (bilinear) + `GetPickPos` (ray-tri sobre mask quads) com testes
-- [ ] Select-server (Field2723): terreno + céu + estáticos na tela; FieldView com
-      `--map FieldXXYY` e câmera livre (WASD+mouse) para validação
-- [ ] CI verde nos 3 OS; `Projects/` intocado; screenshots no PR
+**Estado final (DoD)**:
+- [x] Loader `.trn` (FileTileInfo 12B × 4096, header nome+pos) + normais por vértice +
+      `m_pMaskData` 128×128; teste com blob sintético + parse do `Field2723.trn` real
+- [x] Shader `terrain`: tiles normais single-texture; `MODULATE2X` só lava/água
+      (**correção**: sem LERP por alpha — ver §2.1); batches por par de texturas
+- [x] `EnvTextureList3.bin` — **layout real: 2048 × 528B (A/B)** — + UVs rotacionados
+      + tiles especiais (código pronto; assets deste build não têm lava/água — ver §7)
+- [x] Céu: domo `sky001.msa`, texturas `sky01-04.wys` por clima (por NOME — índices do
+      código vazado não batem com este build), `FogList`, clear color, light colors
+- [x] Mar: grid procedural, onda sin + scroll, shimmer fog2 (SRC_COLOR/ONE)
+- [x] Loader `.wyt` (stb_image) + `ModelTextureList` (também 528B)
+- [x] Loaders `.bon`/`.ani`/`.msh` + testes sintéticos + parse real de `tr010101.msh`
+- [x] Skinning GLSL: LBS 1-4 pesos, UBO BonePalette (binding 1), 80 FPS × 4 sub-steps;
+      palmeiras de Field0101 balançando
+- [x] Roteamento completo: Tree (skinned), House/Ship/Float (static .msa), Sea (2)
+- [x] `GroundGetColor`/`GroundSetColor` (quirks preservados: /256, branch morto) +
+      tint de lâmpadas 501-503
+- [x] `GetHeight`/`GetPickPos` + testes; clique direito imprime posição no viewer
+- [x] `glFrontFace(GL_CW)` global (D3D CW-on-screen) — corrige paredes unilaterais
+- [x] CI verde nos 3 OS; `Projects/` intocado
 
 **Duração estimada**: 2 semanas (10 dias úteis).
 
@@ -333,3 +328,26 @@ adicionar decode `.wyt` e lookups por nome para Model/Env lists.
 - Shaders `vseffect*.bin`/`pseffect*.bin` (8 efeitos) — Fase 4; mesma técnica de
   disassembly se precisar bit-exact.
 - `AttributeMap.dat`/`cdata.bin` (checksum/anti-hack) — ignorar no port single-player.
+
+## 7. Achados da execução (pós-implementação)
+
+1. **Winding global**: D3D9 front = CW **na tela** (framebuffer y-down); GL default
+   CCW (window y-up). Como não flipamos Y, `glFrontFace(GL_CW)` iguala a semântica
+   (`D3DCULL_CCW` ≡ cull `GL_BACK`). Sem isso, meshes unilaterais (muralhas) ficam
+   invertidas. Aplicado no main + glsmoke; ordens de índice do terreno/mar são as
+   originais (sem reversão).
+2. **Listas de texturas são 528B/entrada (A+B)**: `MeshTextureList.bin` (3048),
+   `EnvTextureList3.bin` (2048), `EffectTextureList.bin` (600) — todos stride 528,
+   metade A = `stTextureListInfo` ativa. O código vazado lê stride 264 — incompatível
+   com este build (índices numéricos como `67+clima` do TMSky não funcionam; usar
+   lookup por nome: `sky0N.wys`).
+3. **Nomes de textura no .msa podem ter extensão errada** (`.tga` legado) — lookup
+   por stem (sem extensão), igual ao truque do `GetModelTextureIndex` original.
+4. **Tiles lava/água não existem neste build**: nenhum `.trn` usa byTileIndex 28-29
+   (lava) ou 52-55 (água) — os paths MODULATE2X estão implementados mas sem cobertura
+   visual aqui. `Tile00002/3.wys` ausentes → manchas pretas na Field2723 são fiéis
+   ao asset (textura nula = preto no D3D9 também).
+5. **Alpha de objetos estáticos**: `TMObject::Render` usa ALPHAREF 0xAA **+ blend**
+   para texturas com cAlpha != 'N' (não é só cutout) — corrigido no DrawMesh por subset.
+6. **`TerrainGetColor`**: `/256.0f` (não 255) e o terceiro branch `else if (nX==63)`
+   duplicado (morto) — borda inferior lê zeros (preto). Ambos preservados.

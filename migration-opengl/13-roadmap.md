@@ -21,13 +21,18 @@ Critério de saída de cada fase: **validação visual contra o cliente D3D orig
 
 **Saída**: primeira cena real na tela, câmera fixa.
 
-## Fase 2 — Mundo 3D (2-3 semanas)
+## Fase 2 — Mundo 3D (2-3 semanas) ✅ (plano/retrospectiva: `16-fase2-mundo-3d.md`)
 
 8. Terreno (VBO+IBO por frame, combiner, fog) — 07 §7.1.
 9. Céu + sol + mar (shaders dedicados, crossfade de clima) — 07 §7.2-7.4.
 10. Objetos estáticos + alpha test + 2 luzes + point lights — 05 §5.5.
-11. Blob shadows — 07 §7.5 (versão CPU).
+11. Blob shadows — 07 §7.5 (versão CPU). **→ movido para a Fase 3** (sombras são
+    desenhadas pelo dono — TMHuman/TMObject — não pelo mundo).
 12. Picking de terreno/humanos funcionando (deve sair de graça com o shim).
+
+Notas da execução (doc 16 §7): árvores/casas usam `TMSkinMesh` (pipeline de skinning
+entra na Fase 2, não na 3 — Fase 3 fica quase de graça no render); "Leaf" (311-322)
+são partículas de folha caindo → Fase 4.
 
 **Saída**: andar pelo campo com câmera, dia/noite, clima. Sem personagens ainda.
 
