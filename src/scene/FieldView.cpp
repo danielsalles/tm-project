@@ -370,13 +370,7 @@ void FieldView::Render(GLRenderDevice& device) {
     for (auto& b : m_lampFx) {
         if (b.dead)
             continue;
-        FxQuad q;
-        q.world = b.world;
-        q.u0 = 0.02f; q.v0 = 0.02f; q.u1 = 0.98f; q.v1 = 0.98f;
-        q.bgra = b.curBgra;
-        q.textureIndex = BillboardTexture(b);
-        q.blendMode = 1;   // every lamp billboard is EF_BRIGHT in the original
-        m_fx.Emit(q);
+        m_fx.Emit(BillboardToQuad(b, 1));   // every lamp billboard is EF_BRIGHT
     }
     if (m_weatherFx == 2)
         WeatherEmit(m_rain, m_fxFrame.focusX, m_fxFrame.focusZ,
@@ -393,6 +387,28 @@ void FieldView::Render(GLRenderDevice& device) {
                     m_fxFrame.up[0], m_fxFrame.up[1], m_fxFrame.up[2],
                     m_fxFrame.focusH, m_fx);
     }
+    // Phase 5 combat/skill effects: build the per-frame context, then render the
+    // translucent pass. Each effect manages its own GL state (the EffectRenderer
+    // flush pattern — direct GL + cache Invalidate), and most emit billboard
+    // quads into m_fx which is flushed right after.
+    m_skillCtx.device     = &device;
+    m_skillCtx.fx         = &m_fx;
+    m_skillCtx.textures   = m_textures;
+    m_skillCtx.skin       = m_charReady ? &m_charPipe : nullptr;
+    m_skillCtx.charCache  = m_charReady ? &m_charCache : nullptr;
+    m_skillCtx.terrain    = m_hasTerrain ? &m_terrain : nullptr;
+    m_skillCtx.camYawH    = m_fxFrame.yawH;
+    m_skillCtx.camPitchV  = m_fxFrame.pitchV;
+    m_skillCtx.screenW    = m_fxFrame.screenW;
+    m_skillCtx.screenH    = m_fxFrame.screenH;
+    m_skillCtx.focusX     = m_fxFrame.focusX;
+    m_skillCtx.focusH     = m_fxFrame.focusH;
+    m_skillCtx.focusZ     = m_fxFrame.focusZ;
+    m_skillCtx.viewRight[0] = m_fxFrame.right[0]; m_skillCtx.viewRight[1] = m_fxFrame.right[1]; m_skillCtx.viewRight[2] = m_fxFrame.right[2];
+    m_skillCtx.viewUp[0]    = m_fxFrame.up[0];    m_skillCtx.viewUp[1]    = m_fxFrame.up[1];    m_skillCtx.viewUp[2]    = m_fxFrame.up[2];
+    m_skillCtx.getMesh    = [this](int idx) -> GLMesh* { return GetMesh(idx, *m_textures); };
+    m_skills.Render(m_skillCtx);
+
     m_fx.Flush(device, *m_textures, m_fxFrame.screenW, m_fxFrame.screenH);
 }
 
@@ -416,6 +432,8 @@ void FieldView::FrameMove(float timeSec) {
         WeatherFrameMove(m_snow1, nowMs, m_fxFrame.focusX, m_fxFrame.focusH, m_fxFrame.focusZ);
         WeatherFrameMove(m_snow2, nowMs, m_fxFrame.focusX, m_fxFrame.focusH, m_fxFrame.focusZ);
     }
+    // Phase 5 skills/projectiles/decal controllers.
+    m_skills.FrameMove(nowMs, m_skillCtx);
 }
 
 void FieldView::SetWeatherFx(int mode) {

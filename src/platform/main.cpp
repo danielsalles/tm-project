@@ -17,6 +17,7 @@
 #include "world/SkyDome.h"
 #include "world/SunFlare.h"
 #include "world/TerrainData.h"
+#include "world/SkillFx.h"
 
 #include <ctime>
 
@@ -102,6 +103,11 @@ int main(int argc, char** argv) {
     bool walkToSet = false;
     float hoverPx = -1, hoverPy = -1;
     int startWeapon = 0;
+    // Phase 5 combat VFX (doc 19 §13): --skill <name>,x,z[,level]. A small set
+    // of demo effects is wired now (glow/burst/bash/meteor-lite); richer skills
+    // arrive in later steps. Repeating the flag stacks multiple effects.
+    struct SkillReq { char name[24]; float x, z; int level; };
+    std::vector<SkillReq> skillReqs;
     for (int i = 1; i < argc; ++i) {
         if (!strcmp(argv[i], "--shot") && i + 1 < argc)
             shotPath = argv[++i];
@@ -143,6 +149,17 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "--hoverpx") && i + 2 < argc) {
             hoverPx = (float)atof(argv[++i]);
             hoverPy = (float)atof(argv[++i]);
+        }
+        else if (!strcmp(argv[i], "--skill") && i + 1 < argc) {
+            SkillReq r; r.level = 1; r.x = r.z = 0;
+            char buf[96];
+            snprintf(buf, sizeof buf, "%s", argv[++i]);
+            char* tok = strtok(buf, ",");
+            if (tok) { snprintf(r.name, sizeof r.name, "%s", tok); }
+            tok = strtok(nullptr, ",");  if (tok) r.x = (float)atof(tok);
+            tok = strtok(nullptr, ",");  if (tok) r.z = (float)atof(tok);
+            tok = strtok(nullptr, ",");  if (tok) r.level = atoi(tok);
+            skillReqs.push_back(r);
         }
     }
 
@@ -638,6 +655,46 @@ int main(int argc, char** argv) {
         static int frameNo = 0;
         if (walkToSet && myChar && ++frameNo == 3)
             myChar->MoveTo(walkTo[0], walkTo[1], SDL_GetTicks());
+
+        // Phase 5: spawn combat VFX on the 2nd frame (after the scene is live,
+        // skills land in the already-ticked container). Height follows terrain.
+        static bool skillsSpawned = false;
+        if (!skillsSpawned && sceneLoaded) {
+            skillsSpawned = true;
+            const uint32_t nowMs = SDL_GetTicks();
+            const tmx::TerrainData* terr = view.HasTerrain() ? &view.Terrain() : nullptr;
+            for (const auto& r : skillReqs) {
+                const float y = terr ? tmx::TerrainGetHeight(*terr, r.x, r.z) : 0.0f;
+                if (!strcmp(r.name, "glow")) {
+                    view.AddSkillEffect(std::make_unique<tmx::SkillGlow>(
+                        r.x, y, r.z, 56, 700, 0.8f, 0xFFFFFFFF));
+                } else if (!strcmp(r.name, "burst")) {
+                    view.AddSkillEffect(std::make_unique<tmx::SkillBurst>(
+                        r.x, y, r.z, 8, 700, 10, 1.2f, 0.6f, 0xFFFFAA00));
+                } else if (!strcmp(r.name, "bash")) {
+                    // TMSkillBash-lite: center glow + splash ring (fire tex 11,
+                    // 0xFF111105 in the original) every ~250ms for the lifetime.
+                    view.AddSkillEffect(std::make_unique<tmx::SkillGlow>(
+                        r.x, y, r.z, 11, 700, 0.9f, 0xFF111105));
+                    view.AddSkillEffect(std::make_unique<tmx::SkillBurst>(
+                        r.x, y, r.z, 11, 700, 12, 1.0f, 0.5f, 0xFF332200));
+                } else if (!strcmp(r.name, "heal")) {
+                    view.AddSkillEffect(std::make_unique<tmx::SkillGlow>(
+                        r.x, y, r.z, 56, 1200, 1.1f, 0xFF44FF44));
+                    view.AddSkillEffect(std::make_unique<tmx::SkillBurst>(
+                        r.x, y, r.z, 56, 1200, 14, 0.8f, 0.5f, 0xFF22AA22));
+                } else if (!strcmp(r.name, "meteor")) {
+                    // TMSkillMeteorStorm-lite: orange ground glow + wide burst
+                    // (tex 11 fire / 71 ash in the original L4+ splash).
+                    view.AddSkillEffect(std::make_unique<tmx::SkillGlow>(
+                        r.x, y, r.z, 11, 900, 1.3f, 0xFFFF7711));
+                    view.AddSkillEffect(std::make_unique<tmx::SkillBurst>(
+                        r.x, y, r.z, 11, 900, 18, 2.0f * r.level, 0.7f, 0xFFAA3300));
+                } else {
+                    tmx::Log("--skill '%s' desconhecido (use glow/burst/bash/heal/meteor)", r.name);
+                }
+            }
+        }
 
         device.BeginFrame();
         {

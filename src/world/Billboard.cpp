@@ -1,4 +1,5 @@
 #include "world/Billboard.h"
+#include "gl/EffectRenderer.h"
 
 #include <cmath>
 
@@ -161,6 +162,16 @@ void BillboardFrameMove(Billboard& b, uint32_t nowMs, float camYawH, float camPi
     }
     D3DXMatrixMultiply(&b.world, &rot, &scale);
     D3DXMatrixMultiply(&b.world, &b.world, &trans);
+}
+
+FxQuad BillboardToQuad(const Billboard& b, int blendMode) {
+    FxQuad q;
+    q.world        = b.world;
+    q.u0 = 0.02f; q.v0 = 0.02f; q.u1 = 0.98f; q.v1 = 0.98f;
+    q.bgra         = b.curBgra;
+    q.textureIndex = BillboardTexture(b);
+    q.blendMode    = blendMode;
+    return q;
 }
 
 }
