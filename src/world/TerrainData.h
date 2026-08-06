@@ -57,4 +57,14 @@ bool ParseTrn(const uint8_t* data, size_t size, TerrainData& out, std::string* e
 void TerrainGetColor(const TerrainData& t, float worldX, float worldZ, float* out4);
 void TerrainSetColor(TerrainData& t, float worldX, float worldZ, uint32_t dwColor);
 
+// Height query (TMGround::GetHeight): vertical ray from y=100 against the two
+// triangles of the containing tile; -10000 outside the ground.
+float TerrainGetHeight(const TerrainData& t, float worldX, float worldZ);
+
+// Mouse picking (TMGround::GetPickPos): scans mask quads (128x128, heights from
+// the mask with the original's 127->400 blocked mapping) around (focusX,focusZ),
+// ray-tri per cell; returns false when nothing is hit.
+bool TerrainPick(const TerrainData& t, float focusX, float focusZ,
+                 const float* rayOrig3, const float* rayDir3, float* outPos3);
+
 }

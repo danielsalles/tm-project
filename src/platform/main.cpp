@@ -15,6 +15,7 @@
 #include "gl/GLTexture.h"
 #include "scene/FieldView.h"
 #include "world/SkyDome.h"
+#include "world/TerrainData.h"
 
 #include <ctime>
 
@@ -340,6 +341,35 @@ int main(int argc, char** argv) {
                 if (e.button.button == SDL_BUTTON_LEFT) {
                     mouseLook = false;
                     SDL_SetWindowRelativeMouseMode(window, false);
+                } else if (e.button.button == SDL_BUTTON_RIGHT && view.HasTerrain()) {
+                    // Pick: unproject the click point through inverse(view*proj).
+                    int w = 0, h = 0;
+                    SDL_GetWindowSizeInPixels(window, &w, &h);
+                    const float ndcX = 2.0f * e.button.x / (float)w - 1.0f;
+                    const float ndcY = 1.0f - 2.0f * e.button.y / (float)h;
+                    D3DXMATRIX vp, inv;
+                    D3DXMatrixMultiply(&vp, &matView, &matProj);
+                    D3DXMatrixInverse(&inv, nullptr, &vp);
+                    // LH perspective: near plane point = (ndc.x, ndc.y, 0), far = 1
+                    D3DXVECTOR3 near3(ndcX, ndcY, 0.0f), far3(ndcX, ndcY, 1.0f);
+                    auto xform = [&](const D3DXVECTOR3& v, D3DXVECTOR3& out) {
+                        const float* m = &inv._11;
+                        const float w4 = m[3]*v.x + m[7]*v.y + m[11]*v.z + m[15];
+                        out.x = (m[0]*v.x + m[4]*v.y + m[8]*v.z + m[12]) / w4;
+                        out.y = (m[1]*v.x + m[5]*v.y + m[9]*v.z + m[13]) / w4;
+                        out.z = (m[2]*v.x + m[6]*v.y + m[10]*v.z + m[14]) / w4;
+                    };
+                    D3DXVECTOR3 pn, pf;
+                    xform(near3, pn);
+                    xform(far3, pf);
+                    D3DXVECTOR3 dir(pf.x - pn.x, pf.y - pn.y, pf.z - pn.z);
+                    float hit[3];
+                    const float ro[3] = { pn.x, pn.y, pn.z };
+                    const float rd[3] = { dir.x, dir.y, dir.z };
+                    if (tmx::TerrainPick(view.Terrain(), camX, camZ, ro, rd, hit))
+                        tmx::Log("pick: (%.2f, %.2f, %.2f)", hit[0], hit[1], hit[2]);
+                    else
+                        tmx::Log("pick: nada");
                 }
                 break;
             case SDL_EVENT_MOUSE_MOTION:

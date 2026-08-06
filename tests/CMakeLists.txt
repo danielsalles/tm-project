@@ -8,7 +8,8 @@ add_executable(tm_tests
   test_objectfile.cpp
   test_trn.cpp
   test_envtex.cpp
-  test_msh.cpp)
+  test_msh.cpp
+  test_picking.cpp)
 target_link_libraries(tm_tests PRIVATE tmcore tmgl)
 
 # dados dourados acessíveis por path relativo ao diretório do teste
@@ -29,4 +30,5 @@ add_test(NAME objectfile COMMAND tm_tests objectfile)
 add_test(NAME trn        COMMAND tm_tests trn)
 add_test(NAME envtex     COMMAND tm_tests envtex)
 add_test(NAME msh        COMMAND tm_tests msh)
+add_test(NAME picking    COMMAND tm_tests picking)
 add_test(NAME glsmoke    COMMAND tm_glsmoke)

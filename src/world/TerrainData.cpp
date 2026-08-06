@@ -263,4 +263,131 @@ void TerrainSetColor(TerrainData& t, float worldX, float worldZ, uint32_t dwColo
         t.tiles[nX + (nY << 6)].color = dwColor;
 }
 
+namespace {
+
+// Möller–Trumbore, no backface culling (D3DXIntersectTri semantics):
+// returns true + barycentric u,v + distance t along the (normalized) ray.
+bool IntersectTri(const float* v0, const float* v1, const float* v2,
+                  const float* orig, const float* dir, float* u, float* v, float* t) {
+    const float e1[3] = { v1[0] - v0[0], v1[1] - v0[1], v1[2] - v0[2] };
+    const float e2[3] = { v2[0] - v0[0], v2[1] - v0[1], v2[2] - v0[2] };
+    const float p[3] = { dir[1] * e2[2] - dir[2] * e2[1],
+                         dir[2] * e2[0] - dir[0] * e2[2],
+                         dir[0] * e2[1] - dir[1] * e2[0] };
+    const float det = e1[0] * p[0] + e1[1] * p[1] + e1[2] * p[2];
+    if (std::fabs(det) < 1e-9f)
+        return false;
+    const float inv = 1.0f / det;
+    const float tv[3] = { orig[0] - v0[0], orig[1] - v0[1], orig[2] - v0[2] };
+    const float uu = (tv[0] * p[0] + tv[1] * p[1] + tv[2] * p[2]) * inv;
+    if (uu < 0.0f || uu > 1.0f)
+        return false;
+    const float q[3] = { tv[1] * e1[2] - tv[2] * e1[1],
+                         tv[2] * e1[0] - tv[0] * e1[2],
+                         tv[0] * e1[1] - tv[1] * e1[0] };
+    const float vv = (dir[0] * q[0] + dir[1] * q[1] + dir[2] * q[2]) * inv;
+    if (vv < 0.0f || uu + vv > 1.0f)
+        return false;
+    const float tt = (e2[0] * q[0] + e2[1] * q[1] + e2[2] * q[2]) * inv;
+    if (tt < 0.0f)
+        return false;
+    *u = uu;
+    *v = vv;
+    *t = tt;
+    return true;
+}
+
+} // namespace
+
+float TerrainGetHeight(const TerrainData& t, float worldX, float worldZ) {
+    const int nX = (int)((worldX - t.OffsetX()) / 2.0f);
+    const int nY = (int)((worldZ - t.OffsetY()) / 2.0f);
+    if (nX < 0 || nY < 0 || nX > 64 || nY > 64)
+        return -10000.0f;
+
+    const float offX = t.OffsetX(), offY = t.OffsetY();
+    float v0[3], v2[3], v6[3], v8[3];
+    if (nX < 63 && nY < 63) {
+        const auto H = [&](int x, int y) { return t.tiles[x + (y << 6)].height * 0.1f; };
+        v0[0] = nX * 2.0f + offX;       v0[1] = H(nX, nY);         v0[2] = nY * 2.0f + offY;
+        v2[0] = (nX + 1) * 2.0f + offX; v2[1] = H(nX + 1, nY);     v2[2] = nY * 2.0f + offY;
+        v6[0] = nX * 2.0f + offX;       v6[1] = H(nX, nY + 1);     v6[2] = (nY + 1) * 2.0f + offY;
+        v8[0] = (nX + 1) * 2.0f + offX; v8[1] = H(nX + 1, nY + 1); v8[2] = (nY + 1) * 2.0f + offY;
+    } else if (nX == 63) {
+        const auto H = [&](int y) { return t.tiles[63 + (y << 6)].height * 0.1f; };
+        v0[0] = 126.0f + offX; v0[1] = H(nY);     v0[2] = nY * 2.0f + offY;
+        v2[0] = 128.0f + offX; v2[1] = H(nY);     v2[2] = nY * 2.0f + offY;
+        v6[0] = 126.0f + offX; v6[1] = H(nY + 1); v6[2] = (nY + 1) * 2.0f + offY;
+        v8[0] = 128.0f + offX; v8[1] = H(nY + 1); v8[2] = (nY + 1) * 2.0f + offY;
+    } else {   // nY == 63
+        const auto H = [&](int x) { return t.tiles[x + 4032].height * 0.1f; };
+        v0[0] = nX * 2.0f + offX;       v0[1] = H(nX);     v0[2] = 126.0f + offY;
+        v2[0] = (nX + 1) * 2.0f + offX; v2[1] = H(nX + 1); v2[2] = 126.0f + offY;
+        v6[0] = nX * 2.0f + offX;       v6[1] = H(nX);     v6[2] = 128.0f + offY;
+        v8[0] = (nX + 1) * 2.0f + offX; v8[1] = H(nX + 1); v8[2] = 128.0f + offY;
+    }
+
+    const float orig[3] = { worldX, 100.0f, worldZ };
+    const float dir[3] = { 0.0f, -1.0f, 0.0f };
+    float u, v, dist;
+    if (IntersectTri(v0, v2, v6, orig, dir, &u, &v, &dist))
+        return 100.0f - dist;
+    if (IntersectTri(v8, v6, v2, orig, dir, &u, &v, &dist))
+        return 100.0f - dist;
+    return -10000.0f;
+}
+
+bool TerrainPick(const TerrainData& t, float focusX, float focusZ,
+                 const float* rayOrig3, const float* rayDir3, float* outPos3) {
+    // Port of TMGround::GetPickPos: scans mask quads (128x128, heights from
+    // the mask with the original's 127->400 blocked mapping) around (focusX,focusZ),
+    // ray-tri per cell; returns false when nothing is hit.
+    const float offX = t.OffsetX(), offY = t.OffsetY();
+    const int nCamPosX = (int)(focusX - offX);
+    const int nCamPosY = (int)(focusZ - offY);
+    const int nClipIndex = 25;
+    const int half = nClipIndex / 2;
+
+    float dir[3] = { rayDir3[0], rayDir3[1], rayDir3[2] };
+    const float len = std::sqrt(dir[0] * dir[0] + dir[1] * dir[1] + dir[2] * dir[2]);
+    if (len < 1e-9f)
+        return false;
+    dir[0] /= len;
+    dir[1] /= len;
+    dir[2] /= len;
+
+    for (int nY = nCamPosY - half; nY < nClipIndex + nCamPosY; ++nY) {
+        if (nY < 0 || nY > 127)
+            continue;
+        for (int nX = nCamPosX - half; nX < nClipIndex + nCamPosX; ++nX) {
+            if (nX < 0 || nX > 127)
+                continue;
+            int h = t.mask[nY][nX];
+            if (h > 127)
+                h = 0;
+            if (h == 127)
+                h = 400;
+            const float y = h * 0.1f;
+            const float v0[3] = { nX + offX,         y, nY + offY };
+            const float v1[3] = { nX + offX,         y, nY + 1.0f + offY };
+            const float v2[3] = { nX + 1.0f + offX,  y, nY + offY };
+            const float v3[3] = { nX + 1.0f + offX,  y, nY + 1.0f + offY };
+            float u, v, dist;
+            if (IntersectTri(v0, v1, v2, rayOrig3, dir, &u, &v, &dist)) {
+                outPos3[0] = v0[0] + v;
+                outPos3[1] = y;
+                outPos3[2] = v0[2] + u;
+                return true;
+            }
+            if (IntersectTri(v3, v2, v1, rayOrig3, dir, &u, &v, &dist)) {
+                outPos3[0] = v3[0] - v;
+                outPos3[1] = y;
+                outPos3[2] = v3[2] - u;
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 }
