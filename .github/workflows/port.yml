@@ -59,10 +59,8 @@ jobs:
           robocopy Dependencies/Directx/Include dxsdk_inc /E /NFL /NDL /NJH /NJS | Out-Null
           # basetsd.h do SDK 2003 conflita com o Windows SDK moderno — remover a cópia
           Remove-Item dxsdk_inc/basetsd.h
-          cl /EHsc /W3 tests/golden/golden_generator.cpp `
-            /I dxsdk_inc `
-            /link /LIBPATH:Dependencies/Directx/Lib d3dx9.lib `
-            /OUT:golden_generator.exe
+          # d3dx9dt.lib = D3DX estático (sem dependência da d3dx9_*.dll no runner)
+          cl /EHsc /W3 tests/golden/golden_generator.cpp /I dxsdk_inc /link /LIBPATH:Dependencies/Directx/Lib d3dx9dt.lib /OUT:golden_generator.exe
 
       - name: run generator
         run: |
