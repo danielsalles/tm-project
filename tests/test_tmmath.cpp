@@ -28,6 +28,18 @@ static float MaxAbsDiff(const float* a, const float* b, int n) {
     return m;
 }
 
+// Erro relativo à escala dos valores dourados: abs(a-b) / max(1, max|b|).
+// Necessário porque as entradas têm magnitude de mundo (±20000) — float32 tem
+// granularidade ~2^-8 nessa escala, então tolerância absoluta não faz sentido.
+static float MaxScaledDiff(const float* a, const float* b, int n) {
+    float num = 0, den = 1.0f;
+    for (int i = 0; i < n; i++) {
+        num = (std::max)(num, fabsf(a[i] - b[i]));
+        den = (std::max)(den, fabsf(b[i]));
+    }
+    return num / den;
+}
+
 #define GOLDEN_OR_SKIP(name) \
     FILE* f = OpenGolden(name); \
     if (!f) { printf("  SKIP %s (golden ausente — rodar generate-golden)\n", name); return; }
@@ -44,13 +56,13 @@ TEST(tmmath, golden_multiply) {
         if (fread(&R, 64, 1, f) != 1) break;
         D3DXMATRIX r;
         D3DXMatrixMultiply(&r, &A, &B);
-        maxErr = (std::max)(maxErr, MaxAbsDiff(&r.m[0][0], &R.m[0][0], 16));
+        maxErr = (std::max)(maxErr, MaxScaledDiff(&r.m[0][0], &R.m[0][0], 16));
         cases++;
     }
     fclose(f);
     printf("  %d casos, maxErr=%g\n", cases, maxErr);
     EXPECT_TRUE(cases > 0);
-    EXPECT_LE(maxErr, TOL_EXACT);
+    EXPECT_LE(maxErr, 1e-6f);
 }
 
 // ---------------- golden: matrix_create.bin [kind][4 params][R] × N ----------------
@@ -76,13 +88,13 @@ TEST(tmmath, golden_matrix_create) {
         case 6: { D3DXVECTOR3 axis(p[0], p[1], p[2]); D3DXMatrixRotationAxis(&r, &axis, p[3]); break; }
         default: continue;
         }
-        maxErr = (std::max)(maxErr, MaxAbsDiff(&r.m[0][0], &R.m[0][0], 16));
+        maxErr = (std::max)(maxErr, MaxScaledDiff(&r.m[0][0], &R.m[0][0], 16));
         cases++;
     }
     fclose(f);
     printf("  %d casos, maxErr=%g\n", cases, maxErr);
     EXPECT_TRUE(cases > 0);
-    EXPECT_LE(maxErr, TOL_SQRT); // rotations usam sinf/cosf
+    EXPECT_LE(maxErr, 1e-6f); // rotations usam sinf/cosf
 }
 
 // ---------------- golden: lookat.bin / perspective.bin ----------------
@@ -99,13 +111,13 @@ TEST(tmmath, golden_lookat) {
         if (fread(&R, 64, 1, f) != 1) break;
         D3DXMATRIX r;
         D3DXMatrixLookAtLH(&r, &eye, &at, &up);
-        maxErr = (std::max)(maxErr, MaxAbsDiff(&r.m[0][0], &R.m[0][0], 16));
+        maxErr = (std::max)(maxErr, MaxScaledDiff(&r.m[0][0], &R.m[0][0], 16));
         cases++;
     }
     fclose(f);
     printf("  %d casos, maxErr=%g\n", cases, maxErr);
     EXPECT_TRUE(cases > 0);
-    EXPECT_LE(maxErr, TOL_SQRT);
+    EXPECT_LE(maxErr, 1e-6f);
 }
 
 TEST(tmmath, golden_perspective) {
@@ -119,13 +131,13 @@ TEST(tmmath, golden_perspective) {
         if (fread(&R, 64, 1, f) != 1) break;
         D3DXMATRIX r;
         D3DXMatrixPerspectiveFovLH(&r, p[0], p[1], p[2], p[3]);
-        maxErr = (std::max)(maxErr, MaxAbsDiff(&r.m[0][0], &R.m[0][0], 16));
+        maxErr = (std::max)(maxErr, MaxScaledDiff(&r.m[0][0], &R.m[0][0], 16));
         cases++;
     }
     fclose(f);
     printf("  %d casos, maxErr=%g\n", cases, maxErr);
     EXPECT_TRUE(cases > 0);
-    EXPECT_LE(maxErr, TOL_EXACT);
+    EXPECT_LE(maxErr, 1e-5f); // tanf diverge ~1-2 ULP entre CRTs
 }
 
 // ---------------- golden: inverse.bin [A][R][det] × N ----------------
@@ -142,14 +154,14 @@ TEST(tmmath, golden_inverse) {
         D3DXMATRIX r;
         float d;
         EXPECT_TRUE(D3DXMatrixInverse(&r, &d, &A) != nullptr);
-        maxErr = (std::max)(maxErr, MaxAbsDiff(&r.m[0][0], &R.m[0][0], 16));
+        maxErr = (std::max)(maxErr, MaxScaledDiff(&r.m[0][0], &R.m[0][0], 16));
         EXPECT_NEAR(d, det, TOL_INV * (fabsf(det) + 1.0f));
         cases++;
     }
     fclose(f);
     printf("  %d casos, maxErr=%g\n", cases, maxErr);
     EXPECT_TRUE(cases > 0);
-    EXPECT_LE(maxErr, TOL_INV);
+    EXPECT_LE(maxErr, 1e-4f);
 }
 
 // ---------------- golden: transform.bin [v][M][T][TC] × N ----------------
@@ -170,15 +182,15 @@ TEST(tmmath, golden_transform) {
         D3DXVec3Transform(&t, &v, &M);
         D3DXVECTOR3 tc;
         D3DXVec3TransformCoord(&tc, &v, &M);
-        maxErr4 = (std::max)(maxErr4, MaxAbsDiff(&t.x, &T.x, 4));
-        maxErrC = (std::max)(maxErrC, MaxAbsDiff(&tc.x, &TC.x, 3));
+        maxErr4 = (std::max)(maxErr4, MaxScaledDiff(&t.x, &T.x, 4));
+        maxErrC = (std::max)(maxErrC, MaxScaledDiff(&tc.x, &TC.x, 3));
         cases++;
     }
     fclose(f);
     printf("  %d casos, maxErr4=%g maxErrC=%g\n", cases, maxErr4, maxErrC);
     EXPECT_TRUE(cases > 0);
-    EXPECT_LE(maxErr4, TOL_EXACT);
-    EXPECT_LE(maxErrC, TOL_SQRT);
+    EXPECT_LE(maxErr4, 1e-6f);
+    EXPECT_LE(maxErrC, 1e-5f);
 }
 
 // ---------------- golden: quaternion.bin [q1][q2][t][slerp][m][qback] × N ----------------
@@ -256,7 +268,7 @@ TEST(tmmath, golden_intersect) {
     printf("  %d casos, hitMismatches=%d, maxErr=%g\n", cases, hitMismatches, maxErr);
     EXPECT_TRUE(cases > 0);
     EXPECT_EQ(hitMismatches, 0); // sinal hit/miss tem de ser idêntico — picking depende
-    EXPECT_LE(maxErr, TOL_SQRT);
+    EXPECT_LE(maxErr, 1e-4f); // u,v∈[0,1] e dist~100: 1e-4 abs ≈ 1e-6 rel
 }
 
 // ---------------- golden: project.bin [v][vp][world][view][proj][out] × N ----------------
@@ -276,13 +288,13 @@ TEST(tmmath, golden_project) {
         if (fread(&out, 12, 1, f) != 1) break;
         D3DXVECTOR3 o;
         D3DXVec3Project(&o, &v, &vp, &proj, &view, &world);
-        maxErr = (std::max)(maxErr, MaxAbsDiff(&o.x, &out.x, 3));
+        maxErr = (std::max)(maxErr, MaxScaledDiff(&o.x, &out.x, 3));
         cases++;
     }
     fclose(f);
     printf("  %d casos, maxErr=%g\n", cases, maxErr);
     EXPECT_TRUE(cases > 0);
-    EXPECT_LE(maxErr, TOL_SQRT);
+    EXPECT_LE(maxErr, 1e-2f);
 }
 
 // ================= autoconsistência (sempre roda, mesmo sem dourados) =================
