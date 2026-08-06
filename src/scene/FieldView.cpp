@@ -2,6 +2,7 @@
 
 #include "gl/GLRenderDevice.h"
 #include "platform/Platform.h"
+#include "world/LampFx.h"
 
 #include "shaders_embedded.h"
 
@@ -144,8 +145,14 @@ bool FieldView::Load(const char* mapName, GLTextureManager& textures,
                     m_treeInsts.push_back(inst);
                     continue;
                 }
-                if (kind == ObjectKind::TorchEffect && r.dwObjType >= 501 && r.dwObjType <= 503) {
-                    m_lampRecords.push_back(r);   // terrain tint applied after the loop
+                if (kind == ObjectKind::TorchEffect) {
+                    m_lampRecords.push_back(r);   // tint 501-503 + glow billboards (fase 4)
+                    continue;
+                }
+                if (kind == ObjectKind::Butterfly || kind == ObjectKind::Fish ||
+                    kind == ObjectKind::Leaf) {
+                    CritterSpawn(r.dwObjType, offX + r.posX, r.fHeight, offY + r.posY,
+                                 m_critters);
                     continue;
                 }
                 if (kind != ObjectKind::GenericStatic &&
@@ -224,11 +231,22 @@ bool FieldView::Load(const char* mapName, GLTextureManager& textures,
             TerrainSetColor(m_terrain, wx, wz, dwCol);
         }
     }
+
+    // Lamp glow billboards (TMObjectContainer.cpp:405-530). Our .dat records are
+    // 28B and carry no fScaleH/fScaleV (the original leaks them from the next
+    // record); use the billboard default scale 0.5 for both axes.
+    for (const auto& r : m_lampRecords) {
+        BuildLampGlow(r.dwObjType,
+                      m_terrain.OffsetX() + r.posX, r.fHeight,
+                      m_terrain.OffsetY() + r.posY, r.fAngle, 0.5f, m_lampFx);
+    }
     return any;
 }
 
 bool FieldView::InitGL(std::string* err) {
     if (!m_terrainRenderer.Init(err))
+        return false;
+    if (!m_fx.Init(err))
         return false;
     if (m_hasTerrain && !m_terrainRenderer.Build(m_terrain, err))
         return false;
@@ -326,6 +344,56 @@ void FieldView::Render(GLRenderDevice& device) {
         for (auto& c : m_chars)
             c->Render(m_charPipe, device, nowMs);
     }
+
+    // Critters (phase 4): skinned ambient objects; leaves use the fade path.
+    if (m_charReady && m_crittersBuilt) {
+        m_charPipe.Begin(device, 170.0f);
+        const uint32_t nowMs = (uint32_t)m_lastTimeMs;
+        for (size_t i = 0; i < m_critters.size(); ++i) {
+            if (i >= m_critterMeshes.size() || !m_critterMeshes[i])
+                continue;
+            const Critter& c = m_critters[i];
+            D3DXMATRIX rot, scale, trans, world;
+            D3DXMatrixRotationYawPitchRoll(&rot, c.curAngle - D3DXToRadian(90),
+                                           -D3DXToRadian(90), 0.0f);
+            D3DXMatrixScaling(&scale, c.scale, c.scale, c.scale);
+            D3DXMatrixTranslation(&trans, c.curX, c.curY, c.curZ);
+            D3DXMatrixMultiply(&world, &rot, &scale);
+            D3DXMatrixMultiply(&world, &world, &trans);
+            m_charPipe.SetFadeBlend(c.kind == 0);   // leaves fade by distance
+            m_critterMeshes[i]->Render(m_charPipe, device, world, nowMs);
+            m_charPipe.SetFadeBlend(false);
+        }
+    }
+
+    // Effects last: no depth writes, camera-facing (TMEffectBillBoard states).
+    for (auto& b : m_lampFx) {
+        if (b.dead)
+            continue;
+        FxQuad q;
+        q.world = b.world;
+        q.u0 = 0.02f; q.v0 = 0.02f; q.u1 = 0.98f; q.v1 = 0.98f;
+        q.bgra = b.curBgra;
+        q.textureIndex = BillboardTexture(b);
+        q.blendMode = 1;   // every lamp billboard is EF_BRIGHT in the original
+        m_fx.Emit(q);
+    }
+    if (m_weatherFx == 2)
+        WeatherEmit(m_rain, m_fxFrame.focusX, m_fxFrame.focusZ,
+                    m_fxFrame.right[0], m_fxFrame.right[1], m_fxFrame.right[2],
+                    m_fxFrame.up[0], m_fxFrame.up[1], m_fxFrame.up[2],
+                    m_fxFrame.focusH, m_fx);
+    else if (m_weatherFx == 3) {
+        WeatherEmit(m_snow1, m_fxFrame.focusX, m_fxFrame.focusZ,
+                    m_fxFrame.right[0], m_fxFrame.right[1], m_fxFrame.right[2],
+                    m_fxFrame.up[0], m_fxFrame.up[1], m_fxFrame.up[2],
+                    m_fxFrame.focusH, m_fx);
+        WeatherEmit(m_snow2, m_fxFrame.focusX, m_fxFrame.focusZ,
+                    m_fxFrame.right[0], m_fxFrame.right[1], m_fxFrame.right[2],
+                    m_fxFrame.up[0], m_fxFrame.up[1], m_fxFrame.up[2],
+                    m_fxFrame.focusH, m_fx);
+    }
+    m_fx.Flush(device, *m_textures, m_fxFrame.screenW, m_fxFrame.screenH);
 }
 
 void FieldView::FrameMove(float timeSec) {
@@ -334,6 +402,34 @@ void FieldView::FrameMove(float timeSec) {
     m_lastTimeMs = timeSec * 1000.0f;
     for (auto& c : m_chars)
         c->FrameMove((uint32_t)m_lastTimeMs);
+    const uint32_t nowMs = (uint32_t)m_lastTimeMs;
+    for (size_t i = 0; i < m_lampFx.size(); ++i)
+        BillboardFrameMove(m_lampFx[i], nowMs, m_fxFrame.yawH, m_fxFrame.pitchV, (uint32_t)i);
+    for (size_t i = 0; i < m_critters.size(); ++i) {
+        CritterFrameMove(m_critters[i], nowMs, m_fxFrame.focusX, m_fxFrame.focusZ);
+        if (i < m_critterMeshes.size() && m_critterMeshes[i])
+            m_critterMeshes[i]->alphaMul = m_critters[i].alpha;
+    }
+    if (m_weatherFx == 2)
+        WeatherFrameMove(m_rain, nowMs, m_fxFrame.focusX, m_fxFrame.focusH, m_fxFrame.focusZ);
+    else if (m_weatherFx == 3) {
+        WeatherFrameMove(m_snow1, nowMs, m_fxFrame.focusX, m_fxFrame.focusH, m_fxFrame.focusZ);
+        WeatherFrameMove(m_snow2, nowMs, m_fxFrame.focusX, m_fxFrame.focusH, m_fxFrame.focusZ);
+    }
+}
+
+void FieldView::SetWeatherFx(int mode) {
+    if (mode == m_weatherFx)
+        return;
+    m_weatherFx = mode;
+    if (mode == 2 && m_rain.drops.empty())
+        WeatherInit(m_rain, 0, 1.0f);
+    if (mode == 3) {
+        if (m_snow1.drops.empty())
+            WeatherInit(m_snow1, 1, 1.0f);
+        if (m_snow2.drops.empty())
+            WeatherInit(m_snow2, 1, 2.0f);
+    }
 }
 
 bool FieldView::InitCharacters(const std::string& boneAniListTxt,
@@ -346,6 +442,24 @@ bool FieldView::InitCharacters(const std::string& boneAniListTxt,
     if (!m_charPipe.Init(err))
         return false;
     m_charReady = true;
+
+    // Critters: one CharacterMesh each (single-part skinned types 61/69/24/70).
+    for (auto& c : m_critters) {
+        auto mesh = std::make_unique<CharacterMesh>();
+        int16_t meshLook[8] = {};
+        int16_t skinLook[8] = {};
+        meshLook[0] = c.meshLook0;
+        skinLook[0] = c.skinLook0;
+        std::string cerr;
+        if (mesh->Init(m_charCache, textures, c.skinMeshType, meshLook, skinLook, &cerr)) {
+            mesh->pb.fps = c.fps;
+            m_critterMeshes.push_back(std::move(mesh));
+        } else {
+            Log("critter type %d: %s", c.skinMeshType, cerr.c_str());
+            m_critterMeshes.push_back(nullptr);
+        }
+    }
+    m_crittersBuilt = true;
     return true;
 }
 
@@ -383,6 +497,7 @@ void FieldView::Destroy() {
         c->Destroy();
     m_chars.clear();
     m_charPipe.Destroy();
+    m_fx.Destroy();
     m_terrainRenderer.Destroy();
     m_seaShader.Destroy();
     m_trees.Destroy();

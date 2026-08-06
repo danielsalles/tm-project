@@ -27,12 +27,19 @@ public:
     // uploads it to the shared UBO and draws the part.
     void DrawPart(GLRenderDevice& device, GLSkinMesh& mesh, GLuint texture,
                   const std::vector<D3DXMATRIX>& combined,
-                  const D3DXMATRIX& fallbackWorld);
+                  const D3DXMATRIX& fallbackWorld, float alphaMul = 1.0f,
+                  const float* emissiveAdd = nullptr);
+
+    // Fade path (TMLeaf): SRCALPHA/INVSRCALPHA blend + no depth writes.
+    void SetFadeBlend(bool on) { m_fadeBlend = on; }
 
 private:
     GLShader m_shader;
     GLint m_locNumInfluence = -1, m_locTex0 = -1, m_locAlphaRef = -1, m_locAlphaTest = -1;
     GLuint m_uboBones = 0;
+    GLint m_locAlphaMul = -1;
+    GLint m_locEmissiveAdd = -1;
+    bool m_fadeBlend = false;
 };
 
 }

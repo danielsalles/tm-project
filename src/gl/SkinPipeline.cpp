@@ -15,6 +15,8 @@ bool SkinPipeline::Init(std::string* err) {
     m_locTex0         = m_shader.UniformLoc("uTex0");
     m_locAlphaRef     = m_shader.UniformLoc("uAlphaRef");
     m_locAlphaTest    = m_shader.UniformLoc("uAlphaTest");
+    m_locAlphaMul     = m_shader.UniformLoc("uAlphaMul");
+    m_locEmissiveAdd  = m_shader.UniformLoc("uEmissiveAdd");
 
     GLuint blockIdx = glGetUniformBlockIndex(m_shader.Program(), "BonePalette");
     if (blockIdx == GL_INVALID_INDEX) {
@@ -51,7 +53,8 @@ void SkinPipeline::Begin(GLRenderDevice& device, float alphaRef) {
 
 void SkinPipeline::DrawPart(GLRenderDevice& device, GLSkinMesh& mesh, GLuint texture,
                             const std::vector<D3DXMATRIX>& combined,
-                            const D3DXMATRIX& fallbackWorld) {
+                            const D3DXMATRIX& fallbackWorld, float alphaMul,
+                            const float* emissiveAdd) {
     D3DXMATRIX palette[kMaxBones];
     for (uint32_t i = 0; i < mesh.numPalette; ++i) {
         const uint32_t fid = mesh.boneFrameId[i];
@@ -63,8 +66,24 @@ void SkinPipeline::DrawPart(GLRenderDevice& device, GLSkinMesh& mesh, GLuint tex
     glBindBuffer(GL_UNIFORM_BUFFER, 0);
 
     glUniform1i(m_locNumInfluence, (int)mesh.numInfluence);
-    device.State().texture[0] = texture;
-    device.State().Apply();
+    glUniform1f(m_locAlphaMul, alphaMul);
+    if (emissiveAdd)
+        glUniform3f(m_locEmissiveAdd, emissiveAdd[0], emissiveAdd[1], emissiveAdd[2]);
+    else
+        glUniform3f(m_locEmissiveAdd, 0.0f, 0.0f, 0.0f);
+    GLStateCache& st = device.State();
+    st.texture[0] = texture;
+    if (m_fadeBlend) {
+        st.blend = true;
+        st.blendSrc = GL_SRC_ALPHA;
+        st.blendDst = GL_ONE_MINUS_SRC_ALPHA;
+        st.depthWrite = false;
+    }
+    st.Apply();
+    if (m_fadeBlend) {   // restore for the next normal draw
+        st.blend = false;
+        st.depthWrite = true;
+    }
 
     glBindVertexArray(mesh.vao);
     glDrawElements(GL_TRIANGLES, mesh.indexCount, GL_UNSIGNED_SHORT, nullptr);

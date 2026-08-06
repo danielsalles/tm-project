@@ -15,6 +15,7 @@
 #include "gl/GLTexture.h"
 #include "scene/FieldView.h"
 #include "world/SkyDome.h"
+#include "world/SunFlare.h"
 #include "world/TerrainData.h"
 
 #include <ctime>
@@ -99,6 +100,7 @@ int main(int argc, char** argv) {
     std::vector<SpawnReq> spawnReqs;
     float walkTo[2] = { 0, 0 };
     bool walkToSet = false;
+    float hoverPx = -1, hoverPy = -1;
     int startWeapon = 0;
     for (int i = 1; i < argc; ++i) {
         if (!strcmp(argv[i], "--shot") && i + 1 < argc)
@@ -138,6 +140,10 @@ int main(int argc, char** argv) {
         }
         else if (!strcmp(argv[i], "--weapon") && i + 1 < argc)
             startWeapon = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--hoverpx") && i + 2 < argc) {
+            hoverPx = (float)atof(argv[++i]);
+            hoverPy = (float)atof(argv[++i]);
+        }
     }
 
     if (!SDL_Init(SDL_INIT_VIDEO)) {
@@ -398,8 +404,33 @@ int main(int argc, char** argv) {
         fallbackMesh.Upload(data);
     }
 
+    // Unproject a window pixel to a world-space ray (LH, z 0..1).
+    auto makeRay = [&](float px, float py, float ro[3], float rd[3]) {
+        int w = 0, h = 0;
+        SDL_GetWindowSizeInPixels(window, &w, &h);
+        const float ndcX = 2.0f * px / (float)w - 1.0f;
+        const float ndcY = 1.0f - 2.0f * py / (float)h;
+        D3DXMATRIX vp, inv;
+        D3DXMatrixMultiply(&vp, &matView, &matProj);
+        D3DXMatrixInverse(&inv, nullptr, &vp);
+        D3DXVECTOR3 near3(ndcX, ndcY, 0.0f), far3(ndcX, ndcY, 1.0f);
+        auto xform = [&](const D3DXVECTOR3& v, D3DXVECTOR3& out) {
+            const float* m = &inv._11;
+            const float w4 = m[3]*v.x + m[7]*v.y + m[11]*v.z + m[15];
+            out.x = (m[0]*v.x + m[4]*v.y + m[8]*v.z + m[12]) / w4;
+            out.y = (m[1]*v.x + m[5]*v.y + m[9]*v.z + m[13]) / w4;
+            out.z = (m[2]*v.x + m[6]*v.y + m[10]*v.z + m[14]) / w4;
+        };
+        D3DXVECTOR3 pn, pf;
+        xform(near3, pn);
+        xform(far3, pf);
+        ro[0] = pn.x; ro[1] = pn.y; ro[2] = pn.z;
+        rd[0] = pf.x - pn.x; rd[1] = pf.y - pn.y; rd[2] = pf.z - pn.z;
+    };
+
     bool running = true;
     bool mouseLook = false;
+    float mousePx = hoverPx, mousePy = hoverPy;
     while (running) {
         SDL_Event e;
         while (SDL_PollEvent(&e)) {
@@ -509,6 +540,10 @@ int main(int argc, char** argv) {
                 }
                 break;
             case SDL_EVENT_MOUSE_MOTION:
+                if (hoverPx >= 0.0f)   // --hoverpx automation: ignore real mouse
+                    break;
+                mousePx = e.motion.x;
+                mousePy = e.motion.y;
                 if (mouseLook) {
                     camYaw   += e.motion.xrel * 0.003f;
                     camPitch -= e.motion.yrel * 0.003f;
@@ -555,6 +590,48 @@ int main(int argc, char** argv) {
         }
         updateView();
 
+        {
+            int fw = 0, fh = 0;
+            SDL_GetWindowSizeInPixels(window, &fw, &fh);
+            // Game horizon-angle convention: our camYaw with dir=(sin,cos) maps to
+            // h = -yaw - pi/2 so that YPR(pi/2 - h, ...) faces the camera.
+            tmx::FieldView::FxFrameInfo fxInfo;
+            fxInfo.yawH = -camYaw - 1.5707963f;
+            fxInfo.pitchV = camPitch;
+            fxInfo.screenW = fw;
+            fxInfo.screenH = fh;
+            if (myChar) {
+                fxInfo.focusX = myChar->X();
+                fxInfo.focusH = myChar->Height();
+                fxInfo.focusZ = myChar->Z();
+            } else {
+                fxInfo.focusX = camX + 2.5f;
+                fxInfo.focusH = camY - 2.0f;
+                fxInfo.focusZ = camZ + 2.5f;
+            }
+            fxInfo.right[0] = matView._11; fxInfo.right[1] = matView._21; fxInfo.right[2] = matView._31;
+            fxInfo.up[0]    = matView._12; fxInfo.up[1]    = matView._22; fxInfo.up[2]    = matView._32;
+            view.SetFxFrame(fxInfo);
+            view.SetWeatherFx(weather);   // 2 = rain, 3 = snow, else off
+        }
+        // Mouse-over highlight (TMFieldScene green emissive).
+        if (sceneLoaded && !mouseLook) {
+            float ro[3], rd[3];
+            makeRay(mousePx, mousePy, ro, rd);
+            float bestT = 1e9f;
+            tmx::Character* best = nullptr;
+            for (size_t i = 0; i < view.CharacterCount(); ++i) {
+                tmx::Character* c = view.GetCharacter(i);
+                const float t = c->PickTest(ro, rd);
+                if (t >= 0.0f && t < bestT) {
+                    bestT = t;
+                    best = c;
+                }
+                c->SetHighlight(false);
+            }
+            if (best)
+                best->SetHighlight(true);
+        }
         if (sceneLoaded)
             view.FrameMove((float)SDL_GetTicks() / 1000.0f);
 
@@ -574,6 +651,18 @@ int main(int argc, char** argv) {
         if (sceneLoaded) {
             if (skyLoaded)
                 sky.Render(device, camX, camZ);
+            // Sun + lens flare (weather 0 only — TMSky hides it for 1-9).
+            if (skyLoaded && sky.Weather() == 0) {
+                int fw = 0, fh = 0;
+                SDL_GetWindowSizeInPixels(window, &fw, &fh);
+                tmx::SunFlareEntry table[12];
+                tmx::SunFlareBuildTable(fh > 0 ? (float)fw / 800.0f : 1.0f, table);
+                tmx::FxQuad flares[12];
+                if (tmx::SunFlareCompute(table, camX, camY, camZ, matView, matProj,
+                                         fw, fh, 1.0f, flares))
+                    for (const auto& q : flares)
+                        view.EmitScreenFx(q);
+            }
             view.Render(device);
         } else {
             device.SetRenderStateBlock(1);

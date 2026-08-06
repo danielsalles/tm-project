@@ -83,6 +83,11 @@ public:
     float Angle() const { return m_angle; }
     bool Moving() const { return m_routeLen > 0; }
     CharMotion Motion() const { return m_motion; }
+    // Ray (origin/dir, unnormalized ok) vs the type's pick cylinder
+    // (m_vecPickSize). Returns the hit distance or -1.
+    float PickTest(const float ro[3], const float rd[3]) const;
+    void SetHighlight(bool on) { m_mesh.alphaMul = 1.0f; m_highlight = on; }
+    bool Highlighted() const { return m_highlight; }
     const CharDesc& Desc() const { return m_desc; }
     CharacterMesh& Mesh() { return m_mesh; }
 
@@ -111,6 +116,7 @@ private:
 
     CharMotion m_motion = CharMotion::Stand01;
     bool m_running = false;
+    bool m_highlight = false;
 
     D3DXMATRIX m_world;
 };
