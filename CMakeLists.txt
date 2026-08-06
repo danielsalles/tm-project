@@ -111,6 +111,7 @@ add_library(tmgl STATIC
   src/world/TreeRenderer.cpp
   src/world/SkillEffect.cpp
   src/world/SkillFx.cpp
+  src/world/SwingTrail.cpp
   src/scene/ObjectFile.cpp
   src/scene/SelectServerView.cpp
   src/scene/FieldView.cpp)

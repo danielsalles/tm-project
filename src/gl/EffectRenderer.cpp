@@ -149,6 +149,47 @@ void EffectRenderer::Flush(GLRenderDevice& device, GLTextureManager& textures,
     m_quads.clear();
 }
 
+void EffectRenderer::DrawWorldStrip(const WorldVertex* verts, int vertCount,
+                                    GLTextureManager& textures, int textureIndex, int blendMode) {
+    if (!verts || vertCount < 3)
+        return;
+    EnsureBuffers();
+    // Same direct-GL pattern as Flush (Metal-safe): bind shader, identity world
+    // (verts are already world-space), upload, draw TRIANGLESTRIP, invalidate.
+    glDepthMask(GL_FALSE);
+    glDisable(GL_CULL_FACE);
+    glEnable(GL_BLEND);
+    if (blendMode == 1)      // EF_BRIGHT
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+    else if (blendMode == 2) // SRCCOLOR flare
+        glBlendFunc(GL_SRC_COLOR, GL_ONE_MINUS_SRC_COLOR);
+    else
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    m_shader.Bind();
+    glUniform1i(m_locTex0, 0);
+    glUniform1i(m_locScreenSpace, 0);
+
+    D3DXMATRIX ident;
+    D3DXMatrixIdentity(&ident);
+    glUniformMatrix4fv(m_locWorld, 1, GL_FALSE, &ident._11);
+
+    glBindVertexArray(m_vao);
+    glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
+    glBufferData(GL_ARRAY_BUFFER, (GLsizei)(vertCount * sizeof(WorldVertex)),
+                 verts, GL_DYNAMIC_DRAW);
+    glActiveTexture(GL_TEXTURE0);
+    GLuint tex = textures.GetEffectTexture(textureIndex);
+    if (tex == 0) tex = 1;
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, vertCount);
+    glBindVertexArray(0);
+
+    glDepthMask(GL_TRUE);
+    glEnable(GL_CULL_FACE);
+    // Caller (FieldView) invalidates the cache once after all skill renders.
+}
+
 void EffectRenderer::Destroy() {
     m_shader.Destroy();
     if (m_ebo) glDeleteBuffers(1, &m_ebo);

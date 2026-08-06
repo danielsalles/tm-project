@@ -18,6 +18,7 @@
 #include "world/SunFlare.h"
 #include "world/TerrainData.h"
 #include "world/SkillFx.h"
+#include "world/SwingTrail.h"
 
 #include <ctime>
 
@@ -108,6 +109,7 @@ int main(int argc, char** argv) {
     // arrive in later steps. Repeating the flag stacks multiple effects.
     struct SkillReq { char name[24]; float x, z; int level; };
     std::vector<SkillReq> skillReqs;
+    bool swingLoop = false;
     for (int i = 1; i < argc; ++i) {
         if (!strcmp(argv[i], "--shot") && i + 1 < argc)
             shotPath = argv[++i];
@@ -161,6 +163,8 @@ int main(int argc, char** argv) {
             tok = strtok(nullptr, ",");  if (tok) r.level = atoi(tok);
             skillReqs.push_back(r);
         }
+        else if (!strcmp(argv[i], "--swing"))
+            swingLoop = true;
     }
 
     if (!SDL_Init(SDL_INIT_VIDEO)) {
@@ -693,6 +697,24 @@ int main(int argc, char** argv) {
                 } else {
                     tmx::Log("--skill '%s' desconhecido (use glow/burst/bash/heal/meteor)", r.name);
                 }
+            }
+        }
+
+        // Phase 5 weapon trail demo (--swing): loop attacks on the focused char,
+        // driving a SwingTrail ribbon from the right-hand bone.
+        static tmx::SwingTrail* swingFx = nullptr;
+        static uint32_t swingCycle = 0;
+        if (swingLoop && myChar && sceneLoaded) {
+            const uint32_t nowMs = SDL_GetTicks();
+            if (!swingFx) {
+                auto fx = std::make_unique<tmx::SwingTrail>();
+                swingFx = fx.get();
+                view.AddSkillEffect(std::move(fx));
+            }
+            if (nowMs - swingCycle > 1100) {
+                swingCycle = nowMs;
+                myChar->SetMotion(tmx::CharMotion::Attack01, nowMs);
+                myChar->AttachSwing(swingFx, 0.9f, nowMs, 600);
             }
         }
 

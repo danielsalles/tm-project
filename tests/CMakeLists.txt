@@ -22,7 +22,8 @@ add_executable(tm_tests
   test_critter.cpp
   test_charpick.cpp
   test_spawneffect.cpp
-  test_skillmesh.cpp)
+  test_skillmesh.cpp
+  test_swing.cpp)
 target_link_libraries(tm_tests PRIVATE tmcore tmgl)
 
 # dados dourados acessíveis por path relativo ao diretório do teste
@@ -57,4 +58,5 @@ add_test(NAME critter    COMMAND tm_tests critter)
 add_test(NAME charpick   COMMAND tm_tests charpick)
 add_test(NAME spawneffect COMMAND tm_tests spawneffect)
 add_test(NAME skillmesh  COMMAND tm_tests skillmesh)
+add_test(NAME swing     COMMAND tm_tests swing)
 add_test(NAME glsmoke    COMMAND tm_glsmoke)

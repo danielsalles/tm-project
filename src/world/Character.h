@@ -13,6 +13,7 @@ namespace tmx {
 class GLRenderDevice;
 class GLTextureManager;
 class SkinPipeline;
+class SwingTrail;
 
 // ECHAR_MOTION (Enums.h:35).
 enum class CharMotion : int {
@@ -90,6 +91,13 @@ public:
     bool Highlighted() const { return m_highlight; }
     const CharDesc& Desc() const { return m_desc; }
     CharacterMesh& Mesh() { return m_mesh; }
+
+    // Phase 5 weapon trail (doc 19 §6): configures `trail` to sample this
+    // character's right-hand bone each frame and sweep a ribbon. effectLength
+    // = weapon reach; dur = recording window. The trail is owned by the
+    // EffectContainer, not the character.
+    void AttachSwing(SwingTrail* trail, float effectLength, uint32_t nowMs,
+                     uint32_t dur = 600);
 
 private:
     int MaskAt(float wx, float wz) const;      // GroundGetMask equivalent

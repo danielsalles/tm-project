@@ -40,6 +40,17 @@ public:
     void Flush(GLRenderDevice& device, GLTextureManager& textures,
                int screenW, int screenH);
 
+    // Immediate world-space triangle strip (weapon trail / beam). Vertices carry
+    // their own world position (uWorld = identity); drawn right away with the
+    // same shader/state as quads. Used by SwingTrail before Flush.
+    struct WorldVertex {
+        float x, y, z;
+        float r, g, b, a;
+        float u, v;
+    };
+    void DrawWorldStrip(const WorldVertex* verts, int vertCount,
+                        GLTextureManager& textures, int textureIndex, int blendMode);
+
 private:
     void EnsureBuffers();
 
