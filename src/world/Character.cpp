@@ -259,7 +259,22 @@ void Character::Render(SkinPipeline& pipe, GLRenderDevice& device, uint32_t nowM
     m_mesh.emissiveAdd[0] = 0.0f;
     m_mesh.emissiveAdd[1] = m_highlight ? 0.55f : 0.0f;
     m_mesh.emissiveAdd[2] = 0.0f;
+    // Mount renders first (beneath the rider), sharing the character's world.
+    if (m_mount)
+        m_mount->Render(pipe, device, m_world, nowMs);
     m_mesh.Render(pipe, device, m_world, nowMs);
+}
+
+bool Character::SetMount(CharacterAnimationCache& cache, GLTextureManager& textures,
+                         int skinMeshType, uint32_t nowMs, std::string* err) {
+    auto m = std::make_unique<CharacterMesh>();
+    int16_t meshLook[8] = {}, skinLook[8] = {};
+    if (!m->Init(cache, textures, skinMeshType, meshLook, skinLook, err))
+        return false;
+    m->SetCut(0, 40, nowMs);   // mount idle
+    m_mount = std::move(m);
+    SetMotion(CharMotion::Seating, nowMs);   // rider sits
+    return true;
 }
 
 void Character::AttachSwing(SwingTrail* trail, float effectLength, uint32_t nowMs,

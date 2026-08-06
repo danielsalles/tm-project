@@ -72,8 +72,11 @@ bool GLSkinMesh::Upload(const MshData& data) {
 
     numInfluence = data.numInfluence;
     numPalette = data.numPalette;
-    if (numPalette > 40)
-        numPalette = 40;
+    // No clamp: the UBO holds kMaxBones(64) matrices and skin.vert declares
+    // uBones[64]. The old `>40 -> 40` clamp deformed meshes with palettes of
+    // 41-64 bones (fs01 fish, high-bone monsters) — vertices referencing the
+    // dropped bones skinned to garbage. kMaxBones (64) is the real ceiling
+    // (already enforced at parse, SkinMesh.cpp:30).
     for (uint32_t i = 0; i < numPalette; ++i) {
         boneBindInv[i] = data.boneBindInv[i];
         boneFrameId[i] = data.boneFrameId[i];

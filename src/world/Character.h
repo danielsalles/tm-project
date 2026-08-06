@@ -99,11 +99,19 @@ public:
     void AttachSwing(SwingTrail* trail, float effectLength, uint32_t nowMs,
                      uint32_t dur = 600);
 
+    // Phase 5 mount (doc 19 §11, TMBike): spawns a second CharacterMesh (the
+    // mount) at this character's position and switches to the Seating pose.
+    // skinMeshType = mount BoneAni4 index (e.g. 40 = mantua, hs01 type).
+    bool SetMount(CharacterAnimationCache& cache, GLTextureManager& textures,
+                  int skinMeshType, uint32_t nowMs, std::string* err);
+    bool Mounted() const { return m_mount != nullptr; }
+
 private:
     int MaskAt(float wx, float wz) const;      // GroundGetMask equivalent
     void UpdateWorldMatrix();
 
     CharacterMesh m_mesh;
+    std::unique_ptr<CharacterMesh> m_mount;   // phase 5 mount (TMBike)
     const AniSoundData* m_aniSound = nullptr;
     CharDesc m_desc;
 

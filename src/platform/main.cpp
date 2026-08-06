@@ -112,6 +112,7 @@ int main(int argc, char** argv) {
     bool swingLoop = false;
     float arrowStart[2] = {0,0}, arrowTarget[2] = {0,0};
     bool arrowSet = false;
+    int mountType = -1;
     for (int i = 1; i < argc; ++i) {
         if (!strcmp(argv[i], "--shot") && i + 1 < argc)
             shotPath = argv[++i];
@@ -177,6 +178,8 @@ int main(int argc, char** argv) {
         }
         else if (!strcmp(argv[i], "--swing"))
             swingLoop = true;
+        else if (!strcmp(argv[i], "--mount") && i + 1 < argc)
+            mountType = atoi(argv[++i]);
     }
 
     if (!SDL_Init(SDL_INIT_VIDEO)) {
@@ -727,12 +730,21 @@ int main(int argc, char** argv) {
             }
         }
 
+        // Phase 5 mount (doc 19 §11): spawn a mount under the focused char.
+        static bool mountSpawned = false;
+        if (!mountSpawned && mountType >= 0 && myChar && sceneLoaded) {
+            mountSpawned = true;
+            std::string mErr;
+            if (!myChar->SetMount(view.CharCache(), textures, mountType,
+                                  SDL_GetTicks(), &mErr))
+                tmx::Log("--mount falhou: %s", mErr.c_str());
+        }
+
         // Phase 5 weapon trail demo (--swing): loop attacks on the focused char,
         // driving a SwingTrail ribbon from the right-hand bone.
         static tmx::SwingTrail* swingFx = nullptr;
         static uint32_t swingCycle = 0;
-        if (swingLoop && myChar && sceneLoaded) {
-            const uint32_t nowMs = SDL_GetTicks();
+        if (swingLoop && myChar && sceneLoaded) {            const uint32_t nowMs = SDL_GetTicks();
             if (!swingFx) {
                 auto fx = std::make_unique<tmx::SwingTrail>();
                 swingFx = fx.get();
