@@ -66,25 +66,57 @@ EffectTextureList; fade 2 usa ponteiro como fase (substituir por índice estáve
 
 **Saída**: mundo vivo (fogo, sol, clima, critters) + fundação de efeitos p/ skills.
 
-## Fase 5 — UI e fontes (2 semanas)
+## Fase 5 — Combate & VFX de skill (3 semanas) (plano: `19-fase5-combate.md`)
 
-21. UIBatcher + conversão dos `RenderRect*` + remoção dos half-texel offsets — 09.
-22. TMFont2 → stb_truetype (fase 1: textura por string + cache) — 09 §9.2.
-23. RENDER_3DOBJ (ícones 3D), grids, cursor software.
-24. Guild marks, minimap.
+20. Fundação: `SkillEffect` base + `EffectContainer` no FieldView (tick/render/
+    auto-delete, cull frustum) — porta o modelo `TMEffect`/`TreeNode`.
+21. `SkillMeshRenderer` (`TMEffectMesh`): mesh comum como VFX, tipos 0-5
+    (scale/angle por progress), texture override, EF_BRIGHT/DEFAULT/ALPHA.
+22. `GroundDecalRenderer` (`TMShade`): grid (N+1)² conformado ao heightmap, UV
+    rotacionado, fade; **novo shader `fx_decal`**.
+23. `SwingTrailRenderer` (`TMEffectSWSwing`) — **o mais difícil do repo**:
+    ribbon 32v TRIANGLESTRIP, ring buffer 48 matrizes de pose do osso-mão,
+    slerp 5-frames + Vec3Lerp, tex 221, child billboards (fire/magic/enchant);
+    `SetSwingMatrix` precompute + `g_dwHandIndex`/`sSwingScale` tables; **novo
+    shader `fx_ribbon`**.
+24. Projéteis (`TMArrow` 13 tipos, `TMCannon`, `TMFlail`): travel + arco + trail
+    + impacto (mesh+decal+particle).
+25. Skills one-shot (20 `TMSkill*`: Bash/MeteorStorm/Fire/Heal/MagicShield…)
+    + buffs persistentes — VFX fiéis, gatilho via CLI (`--skill`/`--shield`).
+26. Efeitos base (`BillBoard2/3/4`, `Spark/Spark2`, `MeshRotate`, `Particle`,
+    `Charge`, `Dust`, `Firework`, `Gold`, `LevelUp`, `Start`, `Drop`).
+27. Glow sanc/legend (pulse emissive) + `RenderEffect` ×15 classes de monstro
+    (billboards ambiente ancorados em osso).
+28. Montarias (`TMBike`) + mantuas (`SetVecMantua`): ride pose + mount skinmesh.
+29. Fix fs01 fish (deformado GPU-side, Fase 4 §11).
+
+Notas do estudo (doc 19): skills são **composições** sobre o `EffectRenderer`
+da Fase 4 (Billboard) + meshes da Fase 2/3; `m_matEffectMat`/`Combine` do SWSwing
+são identidade nunca atribuídos (simplificação); MagicShield/Rescue são buffs
+persistentes dono=character.
+
+**Saída**: mundo vivo com combate VFX (skills, trails, projéteis, decals,
+glows de monstro, montarias). Sem netcode/dano real.
+
+## Fase 6 — UI e fontes (2 semanas)
+
+30. UIBatcher + conversão dos `RenderRect*` + remoção dos half-texel offsets — 09.
+31. TMFont2 → stb_truetype (fase 1: textura por string + cache) — 09 §9.2.
+32. RENDER_3DOBJ (ícones 3D), grids, cursor software.
+33. Guild marks, minimap.
 
 **Saída**: jogo completo jogável end-to-end.
 
-## Fase 6 — Paridade de plataforma (1-2 semanas)
+## Fase 7 — Paridade de plataforma (1-2 semanas)
 
-25. Input completo (DirectInput→SDL), IME básico.
-26. Áudio (DirectSound→SDL_audio/miniaudio), vídeos de intro (cortar ou libmpv).
-27. WinInet→libcurl (guild mark download, patch).
-28. Screenshot, config de vídeo (gamma→uniform, MSAA, aniso).
+34. Input completo (DirectInput→SDL), IME básico.
+35. Áudio (DirectSound→SDL_audio/miniaudio), vídeos de intro (cortar ou libmpv).
+36. WinInet→libcurl (guild mark download, patch).
+37. Screenshot, config de vídeo (gamma→uniform, MSAA, aniso).
 
 **Saída**: release candidato cross-platform.
 
-## Fase 7+ — Modernizações (contínuo, 12-modernizacoes.md)
+## Fase 8+ — Modernizações (contínuo, 12-modernizacoes.md)
 
 Instancing de skinned, atlas de flipbook, bloom real, reflexão de água, sombras,
 streaming thread.
