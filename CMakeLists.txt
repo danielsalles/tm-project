@@ -91,6 +91,15 @@ add_library(tmgl STATIC
   src/gl/EffectRenderer.cpp
   src/gl/SkillMeshRenderer.cpp
   src/gl/GroundDecalRenderer.cpp
+  src/gl/UIBatcher.cpp
+  src/gl/UIRenderer.cpp
+  src/gl/GLFont.cpp
+  src/ui/SControl.cpp
+  src/ui/SControls.cpp
+  src/ui/SControlContainer.cpp
+  src/ui/UILoader.cpp
+  src/ui/TMFont3.cpp
+  src/ui/RenderGeomControl.cpp
   src/world/TerrainData.cpp
   src/world/TerrainRenderer.cpp
   src/world/SkyDome.cpp
@@ -115,7 +124,7 @@ add_library(tmgl STATIC
   src/scene/ObjectFile.cpp
   src/scene/SelectServerView.cpp
   src/scene/FieldView.cpp)
-target_include_directories(tmgl PUBLIC src ${CMAKE_BINARY_DIR}/generated)
+target_include_directories(tmgl PUBLIC src src/ui ${CMAKE_BINARY_DIR}/generated)
 target_link_libraries(tmgl PUBLIC tmcore glad stb)
 target_compile_options(tmgl PRIVATE
   $<$<CXX_COMPILER_ID:Clang,AppleClang,GNU>:-Wall -Wextra>

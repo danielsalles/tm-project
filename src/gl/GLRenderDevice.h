@@ -44,6 +44,9 @@ public:
 
     void DrawMesh(const GLMesh& mesh);  // textures must already be resolved into mesh.subsets
 
+    // UI orthographic projection (Phase 6).
+    void SetMatrixForUI(int screenW, int screenH);
+
     GLStateCache& State() { return m_state; }
 
     // 1x1 white texture bound when a subset/env slot has no texture.

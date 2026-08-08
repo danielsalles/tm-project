@@ -254,12 +254,120 @@ void GLTextureManager::DestroyAll() {
         if (t)
             glDeleteTextures(1, &t);
     }
+    for (GLuint t : m_uiTextures) {
+        if (t)
+            glDeleteTextures(1, &t);
+    }
     m_textures.clear();
     m_entries.clear();
     m_envTextures.clear();
     m_envEntries.clear();
     m_fxTextures.clear();
     m_fxEntries.clear();
+    m_uiTextures.clear();
+    m_uiEntries.clear();
+    m_uiSetsLoaded = false;
+}
+
+bool GLTextureManager::LoadUITextureList(const uint8_t* data, size_t size) {
+    bool ok = LoadList528(data, size, UI_TEX_COUNT, m_uiEntries, m_uiTextures);
+    m_uiTexW.assign(m_uiEntries.size(), 0);
+    m_uiTexH.assign(m_uiEntries.size(), 0);
+    return ok;
+}
+
+bool GLTextureManager::LoadUITextureSetList(const char* textData, size_t textSize) {
+    // Text format: SetName\r\nSetIndex: N\r\nItemCount: M\r\n
+    //   texIndex,startX,startY,width,height,destX,destY\r\n...
+    // Parse line by line.
+    if (!textData || textSize == 0)
+        return false;
+
+    std::string content(textData, textSize);
+    size_t pos = 0;
+    int currentSet = -1;
+
+    auto nextLine = [&]() -> std::string {
+        size_t end = content.find('\n', pos);
+        std::string line;
+        if (end == std::string::npos) {
+            line = content.substr(pos);
+            pos = content.size();
+        } else {
+            line = content.substr(pos, end - pos);
+            pos = end + 1;
+        }
+        // Strip \r
+        if (!line.empty() && line.back() == '\r')
+            line.pop_back();
+        return line;
+    };
+
+    while (pos < content.size()) {
+        std::string line = nextLine();
+        if (line.empty())
+            continue;
+
+        // Try to parse "SetIndex: N"
+        if (line.compare(0, 10, "SetIndex: ") == 0) {
+            currentSet = atoi(line.c_str() + 10);
+            if (currentSet >= 0 && currentSet < UI_SET_COUNT)
+                m_uiSets[currentSet].coords.clear();
+            continue;
+        }
+
+        // Try to parse "ItemCount: M"
+        if (line.compare(0, 11, "ItemCount: ") == 0) {
+            if (currentSet >= 0 && currentSet < UI_SET_COUNT)
+                m_uiSets[currentSet].nCount = atoi(line.c_str() + 11);
+            continue;
+        }
+
+        // Try to parse coord line: "texIndex,startX,startY,width,height,destX,destY"
+        if (currentSet >= 0 && currentSet < UI_SET_COUNT && isdigit((unsigned char)line[0])) {
+            ControlTextureCoord coord = {};
+            if (sscanf(line.c_str(), "%d,%d,%d,%d,%d,%d,%d",
+                       &coord.nTextureIndex, &coord.nStartX, &coord.nStartY,
+                       &coord.nWidth, &coord.nHeight, &coord.nDestX, &coord.nDestY) == 7) {
+                m_uiSets[currentSet].coords.push_back(coord);
+            }
+        }
+    }
+    m_uiSetsLoaded = true;
+    return true;
+}
+
+GLTextureManager::ControlTextureSet* GLTextureManager::GetUITextureSet(int index) {
+    if (index < 0 || index >= UI_SET_COUNT || !m_uiSetsLoaded)
+        return nullptr;
+    return &m_uiSets[index];
+}
+
+GLuint GLTextureManager::GetUITexture(int index, uint32_t showTime) {
+    if (index < 0 || index >= (int)m_uiEntries.size())
+        return 0;
+    if (m_uiEntries[index].fileName[0] == '\0')
+        return 0;
+    // Lazy-load on first access (same pattern as model textures)
+    (void)showTime;
+    GLuint tex = LoadListTexture(m_uiEntries[index].fileName, m_uiTextures[index]);
+    if (tex && index < (int)m_uiTexW.size() && m_uiTexW[index] == 0) {
+        // Cache the pixel size once — UV normalization needs it
+        // (RenderDevice queries D3D texture desc; we query GL level 0).
+        GLint w = 0, h = 0;
+        glBindTexture(GL_TEXTURE_2D, tex);
+        glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &w);
+        glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &h);
+        glBindTexture(GL_TEXTURE_2D, 0);
+        m_uiTexW[index] = w;
+        m_uiTexH[index] = h;
+    }
+    return tex;
+}
+
+void GLTextureManager::GetUITextureSize(int index, int* w, int* h) {
+    if (w) *w = (index >= 0 && index < (int)m_uiTexW.size()) ? m_uiTexW[index] : 0;
+    if (h) *h = (index >= 0 && index < (int)m_uiTexH.size()) ? m_uiTexH[index] : 0;
 }
 
 namespace GLSamplers {

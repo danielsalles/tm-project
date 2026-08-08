@@ -4,6 +4,25 @@ namespace tmx {
 
 void GLStateCache::Invalidate() {
     m_valid = false;
+    scissorEnabled = false;
+}
+
+void GLStateCache::SetScissor(int x, int y, int w, int h) {
+    if (!scissorEnabled) {
+        glEnable(GL_SCISSOR_TEST);
+        scissorEnabled = true;
+    }
+    if (scissorX != x || scissorY != y || scissorW != w || scissorH != h) {
+        glScissor(x, y, w, h);
+        scissorX = x; scissorY = y; scissorW = w; scissorH = h;
+    }
+}
+
+void GLStateCache::DisableScissor() {
+    if (scissorEnabled) {
+        glDisable(GL_SCISSOR_TEST);
+        scissorEnabled = false;
+    }
 }
 
 void GLStateCache::Apply() {

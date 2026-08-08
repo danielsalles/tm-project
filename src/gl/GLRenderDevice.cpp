@@ -108,6 +108,20 @@ void GLRenderDevice::SetEmissive(float r, float g, float b) {
     m_frame.emissive[3] = 1.0f;
 }
 
+void GLRenderDevice::SetMatrixForUI(int screenW, int screenH) {
+    // Orthographic projection: (0,0) top-left, (W,H) bottom-right.
+    // Replaces the D3D9 shallow perspective (fov=0.1, z=50) — visually equivalent.
+    D3DXMATRIX proj;
+    D3DXMatrixIdentity(&proj);
+    proj._11 = 2.0f / (float)screenW;
+    proj._22 = 2.0f / (float)screenH;
+    proj._33 = -1.0f;
+    proj._41 = -1.0f;
+    proj._42 = -1.0f;
+    proj._44 = 1.0f;
+    m_frame.proj = proj;
+}
+
 void GLRenderDevice::BeginFrame() {
     m_drawCalls = 0;
     m_frame.time = GetTicks() / 1000.0f;

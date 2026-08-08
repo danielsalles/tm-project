@@ -59,6 +59,7 @@ O cliente **não** é fixed-function puro, como aparenta. A realidade:
 | `17-fase3-personagens.md` | Plano completo da Fase 3: personagens multi-parte (looks/armas), multi-.ani + slerp, rota/click-to-move, câmera follow, NPCs/monstros |
 | `18-fase4-efeitos.md` | Plano completo da Fase 4: EffectRenderer/billboards, lamp glows, sol+flare, chuva/neve, critters (folhas/borboletas/peixes), mouse-over |
 | `19-fase5-combate.md` | Plano completo da Fase 5: skills (20 TMSkill*), trail de arma SWSwing (ribbon+slerp), projéteis (arrow/cannon/flail), decals TMShade, SkillMesh/SkinMesh, efeitos base (Ring/Beam/Spark), glow sanc/legend + RenderEffect×15, montarias/mantuas, fix fs01 |
+| `20-fase6-ui-fontes.md` | Plano completo da Fase 6: UIBatcher (orto, VBO, batch), GLFont (stb_truetype), TMFont3 (dano flutuante), RenderRect*×10, RenderGeomControl, UI textures (512+600), SControl tree (13 subclasses), SControlContainer (input+modal), cursor software, glScissor, guild marks |
 
 ## Stack recomendada
 

@@ -98,14 +98,30 @@ persistentes dono=character.
 **Saída**: mundo vivo com combate VFX (skills, trails, projéteis, decals,
 glows de monstro, montarias). Sem netcode/dano real.
 
-## Fase 6 — UI e fontes (2 semanas)
+## Fase 6 — UI e fontes (3 semanas) ✅ (plano/retrospectiva: `20-fase6-ui-fontes.md`)
 
-30. UIBatcher + conversão dos `RenderRect*` + remoção dos half-texel offsets — 09.
-31. TMFont2 → stb_truetype (fase 1: textura por string + cache) — 09 §9.2.
-32. RENDER_3DOBJ (ícones 3D), grids, cursor software.
-33. Guild marks, minimap.
+30. UIBatcher (batch de quads 2D, projeção ortográfica, VBO dinâmico, 1 draw por
+    run de textura) + `SetMatrixForUI` (ortho) + shader `ui_quad` — doc 09 §9.1.
+31. RenderRect* (10 primitivas: RenderRectC/Tex/NoTex/Coord/TexDamage/Rot/
+    Tex2C/Tex2M/Progress2) via UIBatcher.
+32. GLFont (stb_truetype fase 1: textura por string, cache LRU 256, cp949→UTF-8,
+    sombra +1px, alinhamento 6/7*nLength) — doc 09 §9.2.
+33. TMFont3 (dano flutuante: types 0-6, glyphs texturas 137-141, animação
+    float-up/fade/scale, RenderRectTexDamage).
+34. UI texture pipeline (512 texturas + 600 ControlTextureSets, lazy loading,
+    LRU eviction).
+35. RenderGeomControl + RenderGeomRectImage (dispatch por eRenderType,
+    ControlTextureSet→textura, sanct/legend overlays, guild marks).
+36. SControl tree (base + 13 subclasses: SPanel/SButton/SText/SEditableText/
+    SListBox/SMessageBox/SCursor/SProgressBar/SScrollBar/SCheckBox/S3DObj/
+    SGridControl/SMessagePanel) + FrameMove2 pipeline.
+37. SControlContainer (árvore, input dispatch, modal stack, focus, binary .bin
+    loading via UIBinary.h).
+38. Input SDL→SControl (mouse, keyboard, char events), cursor software
+    (SDL_HideCursor, layer 29), glScissor clipping.
+39. Testes (6+ suítes, ≥30 ctest verdes), docs 13/README, retrospectiva §20.
 
-**Saída**: jogo completo jogável end-to-end.
+**Saída**: jogo completo jogável end-to-end (HUD, inventário, chat, menus).
 
 ## Fase 7 — Paridade de plataforma (1-2 semanas)
 

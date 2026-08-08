@@ -75,6 +75,25 @@ public:
 
     void DestroyAll();
 
+    // --- UI textures (Phase 6) ---
+    struct ControlTextureCoord {
+        int nTextureIndex;
+        int nStartX, nStartY;
+        int nWidth, nHeight;
+        int nDestX, nDestY;
+    };
+    struct ControlTextureSet {
+        int nCount = 0;
+        std::vector<ControlTextureCoord> coords;
+    };
+
+    bool LoadUITextureList(const uint8_t* data, size_t size);
+    bool LoadUITextureSetList(const char* textData, size_t textSize);
+    ControlTextureSet* GetUITextureSet(int index);
+    GLuint GetUITexture(int index, uint32_t showTime);
+    // Pixel dimensions of a loaded UI texture (0,0 until loaded).
+    void GetUITextureSize(int index, int* w, int* h);
+
 private:
     // Shared loader for the 528-byte-record lists (A half = stTextureListInfo).
     bool LoadList528(const uint8_t* data, size_t size, size_t maxEntries,
@@ -86,6 +105,16 @@ private:
     std::vector<GLuint>           m_envTextures;
     std::vector<TextureListEntry> m_fxEntries;
     std::vector<GLuint>           m_fxTextures;
+
+    // UI texture system
+    static constexpr int UI_TEX_COUNT = 512;
+    static constexpr int UI_SET_COUNT = 600;
+    std::vector<TextureListEntry> m_uiEntries;
+    std::vector<GLuint>           m_uiTextures;
+    std::vector<int>              m_uiTexW;
+    std::vector<int>              m_uiTexH;
+    ControlTextureSet             m_uiSets[UI_SET_COUNT];
+    bool                          m_uiSetsLoaded = false;
 };
 
 // Sampler objects for the phase-1 state blocks (10 §10.4).
