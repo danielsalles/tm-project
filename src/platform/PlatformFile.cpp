@@ -60,4 +60,15 @@ int64_t FileSize(const char* relPath) {
     return static_cast<int64_t>(st.st_size);
 }
 
+std::string ResolveAssetPath(const char* relPath) {
+    std::string full = DataDir() + NormalizePath(relPath);
+    struct stat st;
+    if (stat(full.c_str(), &st) == 0)
+        return full;
+    std::string rel = NormalizePath(relPath);
+    if (stat(rel.c_str(), &st) == 0)
+        return rel;
+    return {};
+}
+
 }

@@ -65,6 +65,7 @@ struct GeomControl {
     short sLegend = 0;
     short sSanc = 0;
     int nMarkIndex = -1;
+    int nMarkLayout = 0;   // 1=gold bg (guild 509/9), 2=silver, 3=plain
     uint32_t dwBGColor = 0;
     int bClip = 0;
     GeomControl* m_pNextGeom = nullptr;  // linked list within a layer

@@ -51,6 +51,83 @@ float DecalFade(float progress, int fi) {
 }
 
 // ---------------------------------------------------------------------------
+// TMArrow data-table (TMArrow.cpp:45-145)
+// ---------------------------------------------------------------------------
+
+ArrowTypeInfo GetArrowTypeInfo(int type, int level, int color) {
+    ArrowTypeInfo info;
+    switch (type) {
+    case 151:
+        info.meshIndex = 800;
+        info.lifePerUnitMs = 50;
+        info.beamSize = 0.08f;
+        info.soundId = 133;
+        break;
+    case 152:
+        info.meshIndex = (level == 1) ? 872 : (level == 2) ? 863 : 871;
+        info.lifePerUnitMs = (level == 2) ? 70 : 50;
+        info.beamSize = 0.1f;
+        info.soundId = 134;
+        break;
+    case 153: {
+        static const int kByLevel[12] = {
+            873, 874, 875, 876, 877, 892, 907, 908, 909, 37, 767, 2814 };
+        info.meshIndex = (level == 99) ? 2921
+            : (level >= 0 && level < 12) ? kByLevel[level] : 873;
+        info.lifePerUnitMs = 100;
+        info.beamSize = 0.4f;
+        break;
+    }
+    case 104:
+        info.meshIndex = 879;
+        info.lifePerUnitMs = 150;
+        info.beamSize = 0.0f; // no beam
+        break;
+    case 105:
+        info.meshIndex = (level == 1) ? 919 : 885;
+        info.lifePerUnitMs = 100;
+        info.beamSize = 0.0f;
+        break;
+    case 10000:
+        info.meshIndex = 800;
+        info.lifePerUnitMs = 50;
+        info.beamSize = 0.05f;
+        info.beamColor = 0xFFAAAAFF;
+        break;
+    case 10001:
+        info.meshIndex = 2840;
+        info.lifePerUnitMs = 100;
+        info.beamSize = 0.5f;
+        info.beamColor = 0xFF7777FF;
+        break;
+    case 10002:
+        info.meshIndex = 2840;
+        info.fixedLifeMs = 1000;
+        info.beamSize = 0.5f;
+        info.beamColor = 0xFF7777FF;
+        break;
+    case 10003:
+        info.meshIndex = 800;
+        info.fixedLifeMs = 800;
+        break;
+    default:
+        break;
+    }
+    // Beam color override by nColor (TMArrow.cpp:154-170); only 5-8 map.
+    // (source values are verbatim — some are 24-bit, matching the original).
+    if (info.beamSize > 0.0f && type != 10000 && type != 10001) {
+        switch (color) {
+        case 8: info.beamColor = 0x00883333; break;
+        case 7: info.beamColor = 0x00884388; break;
+        case 6: info.beamColor = 0x00338843; break;
+        case 5: info.beamColor = 0x00222288; break;
+        default: break;
+        }
+    }
+    return info;
+}
+
+// ---------------------------------------------------------------------------
 // SkillGlow
 // ---------------------------------------------------------------------------
 

@@ -271,6 +271,45 @@ void SEditableText::FrameMove2(stGeomList* pDrawList, IVector2 parentPos,
     SText::FrameMove2(pDrawList, parentPos, layer, arg);
     strncpy(m_szString, saved, 255);
     m_szString[255] = '\0';
+
+    // IME composition: appended after the text, yellow, with a 1px underline.
+    if (m_bFocused && m_szComposition[0]) {
+        const int baseLen = (int)strlen(m_szString);
+        const float baseW = 6.0f * baseLen * SControl::s_widthRatio; // SText heuristic
+        const float compX = parentPos.x + m_nPosX + baseW;
+        const float compY = parentPos.y + m_nPosY +
+                            (m_nHeight - 16 * SControl::s_heightRatio) * 0.5f + 2;
+        const float compW = 6.0f * (float)strlen(m_szComposition) * SControl::s_widthRatio;
+
+        m_GCComposition.eRenderType = RENDER_TEXT;
+        m_GCComposition.nPosX = compX;
+        m_GCComposition.nPosY = compY;
+        m_GCComposition.nWidth = compW;
+        m_GCComposition.nHeight = m_nHeight;
+        m_GCComposition.dwColor = 0xFFFFFF66; // highlight (OS IME style)
+        strncpy(m_GCComposition.strString, m_szComposition, 255);
+        m_GCComposition.strString[255] = '\0';
+        AddRenderControlItem(pDrawList, &m_GCComposition, layer);
+
+        m_GCCompUnderline.eRenderType = RENDER_IMAGE;
+        m_GCCompUnderline.nTextureSetIndex = -1; // solid rect
+        m_GCCompUnderline.nPosX = compX;
+        m_GCCompUnderline.nPosY = compY + 14.0f * SControl::s_heightRatio;
+        m_GCCompUnderline.nWidth = compW;
+        m_GCCompUnderline.nHeight = 1.0f;
+        m_GCCompUnderline.dwColor = 0xFFFFFF66;
+        m_GCCompUnderline.strString[0] = '\0';
+        AddRenderControlItem(pDrawList, &m_GCCompUnderline, layer);
+    }
+}
+
+void SEditableText::SetComposition(const char* text) {
+    if (!text) {
+        m_szComposition[0] = '\0';
+        return;
+    }
+    strncpy(m_szComposition, text, 255);
+    m_szComposition[255] = '\0';
 }
 
 int SEditableText::OnKeyDownEvent(int key) {

@@ -26,6 +26,8 @@ public:
     int OnKeyDownEvent(int key);
     int OnKeyUpEvent(int key);
     int OnCharEvent(char c);
+    // IME composition update (SDL_EVENT_TEXT_EDITING). nullptr clears.
+    void OnEditingEvent(const char* composition);
 
     int OnControlEvent(uint32_t controlID, uint32_t event) override;
 

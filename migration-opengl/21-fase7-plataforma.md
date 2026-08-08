@@ -20,36 +20,44 @@ pequenas das Fases 5/6. Vídeos de intro não entram: `TMVideoWnd` é stub
 UI textures 512+600, input SDL básico roteado à UI, `--ui`).
 
 **Estado final (DoD)**:
-- [ ] `AudioEngine` (miniaudio): Init/Shutdown, grupos SFX/BGM, volume master
+- [x] `AudioEngine` (miniaudio): Init/Shutdown, grupos SFX/BGM, volume master
        com mapeamento DS→linear, mute.
-- [ ] `soundlist.txt` parse (`index path channels`, 1-511), lazy decode WAV,
-       polifonia limitada por `nChannel`, `Play/PlayIfNot/Stop/IsPlaying`.
-- [ ] BGM: 15 MP3 (`m_szMusicPath`), `PlayMusic(index)` com loop, volume de
-       música separado (`30*n-3000` centi-dB), troca de faixa por cena.
-- [ ] Wiring de sons: UI click (33), swing/bike (9), heal (4), skills (151/152/
-       156/158/160), cannon (307), chuva (101 loop), neve (113), gate (57),
-       dano (21-28), inventário/efeito (31-36).
-- [ ] Input: key state array por frame; gestos de câmera — middle-drag/Alt+RMB
-       (`dy*0.002` pitch clamp -0.9854..0.75, `dx*0.0049` yaw wrap 2π), wheel
-       zoom com `fClose` (1.2 / 2.5 montado / +Con×0.00019), Alt sem botão
-       (`wheel=3*dy`), inversão `m_bCameraRot` (Config[10]), quarter-view lock
-       (Config[13]).
-- [ ] IME básico: `SDL_EVENT_TEXT_EDITING` (composição com underline no
-       SEditableText), `SDL_SetTextInputArea` posicionando popup do OS;
-       candidatos desenhados pelo OS.
-- [ ] Screenshot: PrintScreen (KEY_UP) → `ScreenShot/Capture%04d.bmp`
+- [x] `soundlist.txt` parse (`index path channels`, 1-511), lazy decode WAV,
+       polifonia limitada por `nChannel`, `Play/PlayIfNot/Stop/IsPlaying`
+       (+ `PlaySoundLooping`).
+- [x] BGM: 15 MP3 (`m_szMusicPath`), `PlayMusic(index)` com loop, volume de
+       música separado (`30*n-3000` centi-dB), faixa por cena (`--ui`→login,
+       campo→field01).
+- [~] Wiring de sons: UI click (33), swing/ataques (9), heal (4), fire (152),
+       meteor (151), arrow (133), chuva (101 loop), neve (113). **Não wired**:
+       gate (57), dano (21-28), inventário (31-36) — sem gatilho no viewer
+       (portão/dano/inventário precisam de gameplay/servidor).
+- [x] Input: gestos de câmera — middle-drag/Alt+RMB (`dy*0.002` pitch clamp
+       -0.9854..0.75, `dx*0.0049` yaw wrap 2π), wheel zoom com `fClose`
+       (1.2 / 2.5 montado), Alt sem botão (`wheel=3*dy`), inversão
+       (Config[10]), quarter-view lock (Config[13]). Extraído para
+       `scene/CameraGestures.h` (puro, testado em test_input).
+- [x] IME básico: `SDL_EVENT_TEXT_EDITING` (composição amarela com underline
+       no SEditableText), `SDL_SetTextInputArea` no foco, clipboard
+       Ctrl+C/X/V.
+- [x] Screenshot: PrintScreen (KEY_UP) → `ScreenShot/Capture%04d.bmp`
        auto-incremento, BMP via stb_image_write, flip Y.
-- [ ] Config.bin (30B, `SaveUpdatAndConfig`): read no boot + write na saída;
-       resolução (tabela 11), windowed, bright, sound/music, camRot, camView.
-- [ ] Pipeline FBO: cena → FBO offscreen (RGBA8+depth) → blit fullscreen com
+- [x] Config.bin (30B, `SaveUpdatAndConfig`): read no boot + write na saída;
+       resolução (tabela 11), windowed/fullscreen, bright, sound/music,
+       camRot, camView. CLI overrides (`--res/--bright/--msaa/--aniso/
+       --volume/--musicvol/--no-sound/--no-music/--fullscreen`).
+- [x] Pipeline FBO: cena → FBO offscreen (RGBA8+D24) → blit fullscreen com
        `uBright` (ganho linear `bright*0.02`, fiel à rampa D3D); MSAA 2/4x via
        renderbuffer multisample + resolve; aniso por sampler.
-- [ ] HTTP mínimo: GET blocking HTTP/1.0 sobre socket (timeout, cap 64KB),
+- [x] HTTP mínimo: GET blocking HTTP/1.0 sobre socket (timeout, cap 64KB),
        `BASE_GetHttpRequest` 1:1, guild mark 632B BMP em thread (fiel a
-       `Guildmark_Download`) alimentando o pipeline de render da Fase 6.
-- [ ] `TMArrow` 13-tipos data-table (leftover Fase 5).
-- [ ] Testes: +4 suítes (audio/http/config/input); ctest 100% verde.
-- [ ] Docs 13/README atualizados; retrospectiva (§10) no doc 21.
+       `Guildmark_Download`) + vertical completo (64 slots, validação BMP,
+       overlay no RenderGeomControl com layouts gold/silver).
+- [x] `TMArrow` 13-tipos data-table (`GetArrowTypeInfo`: mesh/life/beam/sound
+       por type+level+color).
+- [x] Testes: +4 suítes (audio 13, config 5, http 5, input 8); **31/31 ctest
+       verdes**.
+- [x] Docs 13/README atualizados; retrospectiva (§10) no doc 21.
 
 **Duração estimada**: 2 semanas (10 dias úteis) — áudio + pipeline FBO são os
 dois blocos grandes; input/HTTP/screenshot são curtos.
@@ -388,5 +396,50 @@ fases anteriores).
 
 ## 10. Retrospectiva (pós-execução)
 
-_A preencher após a execução: desvios do plano, bugs encontrados, decisões
-tomadas em runtime._
+**Executado conforme o plano**, com estes desvios e aprendizados:
+
+1. **Bug do socket non-blocking** (o único bug real da fase): `HttpGet`
+   fazia connect não-bloqueante para ter timeout, mas esquecia de voltar ao
+   modo blocking — `SO_RCVTIMEO` não se aplica a socket non-blocking e o
+   primeiro `recv` retornava `EAGAIN`. O teste de loopback pegou na hora
+   (404 passava porque retorna 0 de qualquer jeito; o 200 com body falhava).
+   Fix: restaurar flags após o connect.
+
+2. **Constante do teste de volume errada**: escrevi `10^(-12.5/20)` como
+   0.2364489 de cabeça; o valor certo é 0.2371374. O teste pegou a minha
+   conta errada, não o código — reforça a regra de nunca calcular constantes
+   douradas mentalmente.
+
+3. **FBO validado por A/B**: screenshots com e sem o pipeline FBO são
+   idênticos (pixel a pixel na prática). A corrupção de texturas 3D visível
+   no mapa default (personagem azul sólido, tiles pretos, grama branca)
+   **existe na main** — é artefato do snapshot de assets local (faltam
+   arquivos, ex. `abox02.msa`), não regressão da Fase 7. A UI da Fase 6
+   atravessa o blit intacta. `TM_NOFBO=1` ficou como kill-switch de debug.
+
+4. **Declarações em `case` sem bloco**: extrair os gestos para
+   `CameraGestures.h` introduziu declarações dentro de `case` sem chaves
+   ("cannot jump to this case label"). Padrão adotado: todo case com
+   declaração ganha `{ }` (MOUSE_MOTION, MOUSE_WHEEL).
+
+5. **Guild mark foi vertical completo, não só download**: a Fase 6 deixou o
+   campo `nMarkIndex` no GeomControl mas **sem consumidor** — o "pipeline de
+   render pronto" do doc 20 era só a struct. Fase 7 completou: 64 slots no
+   GLTextureManager, validação BMP bit-fiel, overlay com backing gold/silver
+   (layouts 1/2), download em thread + upload na main thread (GL nunca fora
+   dela). Flag de demo: `--guildurl <url>`.
+
+6. **TMArrow table é data-only**: os 9 tipos + níveis viraram
+   `GetArrowTypeInfo` puro (mesh/life/beam/sound), wired ao som 133/134 e à
+   fórmula de lifetime. O render do mesh da flecha durante o voo segue
+   trail-based (o índice de mesh fica disponível para a Fase 8).
+
+7. **miniaudio null backend** (`ma_backend_null` via context config) permite
+   testar lifecycle do engine em CI/headless sem dispositivo de áudio.
+
+8. **Escopo de wiring de sons**: gate/dano/inventário ficaram sem gatilho no
+   viewer (precisam de gameplay real) — DoD marcado [~] honestamente.
+
+**Saída da fase**: release candidato cross-platform — áudio completo (SFX
+polifônico + BGM), input fiel ao original, screenshot, config persistida,
+gamma/MSAA/aniso, HTTP funcional. 31/31 testes verdes.
