@@ -60,6 +60,7 @@ O cliente **não** é fixed-function puro, como aparenta. A realidade:
 | `18-fase4-efeitos.md` | Plano completo da Fase 4: EffectRenderer/billboards, lamp glows, sol+flare, chuva/neve, critters (folhas/borboletas/peixes), mouse-over |
 | `19-fase5-combate.md` | Plano completo da Fase 5: skills (20 TMSkill*), trail de arma SWSwing (ribbon+slerp), projéteis (arrow/cannon/flail), decals TMShade, SkillMesh/SkinMesh, efeitos base (Ring/Beam/Spark), glow sanc/legend + RenderEffect×15, montarias/mantuas, fix fs01 |
 | `20-fase6-ui-fontes.md` | Plano completo da Fase 6: UIBatcher (orto, VBO, batch), GLFont (stb_truetype), TMFont3 (dano flutuante), RenderRect*×10, RenderGeomControl, UI textures (512+600), SControl tree (13 subclasses), SControlContainer (input+modal), cursor software, glScissor, guild marks |
+| `21-fase7-plataforma.md` | Plano completo da Fase 7: AudioEngine (miniaudio, SFX WAV polifônico + BGM MP3), gestos de câmera fiéis + IME básico, screenshot, Config.bin + pipeline FBO (gamma/MSAA/aniso), HTTP mínimo (guild marks), vídeos já-cortados |
 
 ## Stack recomendada
 

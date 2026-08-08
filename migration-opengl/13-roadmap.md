@@ -123,12 +123,21 @@ glows de monstro, montarias). Sem netcode/dano real.
 
 **Saída**: jogo completo jogável end-to-end (HUD, inventário, chat, menus).
 
-## Fase 7 — Paridade de plataforma (1-2 semanas)
+## Fase 7 — Paridade de plataforma (1-2 semanas) (plano: `21-fase7-plataforma.md`)
 
-34. Input completo (DirectInput→SDL), IME básico.
-35. Áudio (DirectSound→SDL_audio/miniaudio), vídeos de intro (cortar ou libmpv).
-36. WinInet→libcurl (guild mark download, patch).
-37. Screenshot, config de vídeo (gamma→uniform, MSAA, aniso).
+34. Input completo (DirectInput→SDL): gestos de câmera fiéis (middle-drag/Alt+RMB
+    0.002/0.0049, wheel com fClose, inversão, quarter-view), IME básico
+    (TEXT_EDITING + input area), clipboard.
+35. Áudio (DirectSound/DirectShow→miniaudio): soundlist.txt + SFX WAV polifônico
+    + BGM MP3 (15 faixas), mapeamento de volume DS→linear. Vídeos de intro:
+    cortados na fonte (TMVideoWnd é stub no original).
+36. WinInet→HTTP mínimo sobre socket (BASE_GetHttpRequest, guild mark BMP em
+    thread); sem libcurl (3 GETs simples, sem HTTPS).
+37. Screenshot (PrintScreen→Capture%04d.bmp), config de vídeo (Config.bin,
+    gamma=ganho linear via FBO+blit, MSAA, aniso, resolução).
+
+Absorve leftovers pequenos: TMArrow 13-tipos data-table (Fase 5), wiring de
+sons de skill/clima/UI (Fase 5/6), guild mark download + IME (Fase 6).
 
 **Saída**: release candidato cross-platform.
 
