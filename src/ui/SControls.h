@@ -85,9 +85,19 @@ public:
     int OnKeyDownEvent(int key) override;
     int OnCharEvent(char c) override;
 
+    // IME composition in progress (SDL_EVENT_TEXT_EDITING, phase 7): rendered
+    // after the committed text with an underline, cleared on commit.
+    void SetComposition(const char* text);
+    const char* GetComposition() const { return m_szComposition; }
+
     int m_nMaxLen = 128;
     int m_bPassword = 0;
     int m_nCursorPos = 0;
+
+private:
+    char m_szComposition[256] = {};
+    GeomControl m_GCComposition;   // composition text (highlight color)
+    GeomControl m_GCCompUnderline; // 1px solid rect under it
 };
 
 // SScrollBar — vertical scroll bar.

@@ -144,9 +144,17 @@ int SControlContainer::OnKeyUpEvent(int key) {
 }
 
 int SControlContainer::OnCharEvent(char c) {
+    // A committed character replaces any IME composition in progress.
+    OnEditingEvent(nullptr);
     if (m_pFocusControl)
         return m_pFocusControl->OnCharEvent(c);
     return 0;
+}
+
+void SControlContainer::OnEditingEvent(const char* composition) {
+    auto* edit = dynamic_cast<SEditableText*>(m_pFocusControl);
+    if (edit)
+        edit->SetComposition(composition);
 }
 
 int SControlContainer::OnControlEvent(uint32_t controlID, uint32_t event) {

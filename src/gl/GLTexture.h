@@ -94,6 +94,26 @@ public:
     // Pixel dimensions of a loaded UI texture (0,0 until loaded).
     void GetUITextureSize(int index, int* w, int* h);
 
+    // --- Guild marks (Phase 7, doc 21 §6) ---
+    // 64 slots of 16x12 24-bit BMPs downloaded over HTTP (original:
+    // TextureManager::LoadGuildTexture + stGuildMark, TextureManager.cpp:1398).
+    static constexpr int GUILD_MARK_COUNT = 64;
+    static constexpr int GUILD_MARK_W = 16;
+    static constexpr int GUILD_MARK_H = 12;
+
+    // Validates the downloaded buffer (TMFieldScene::Guildmark_IsCorrectBMP):
+    // 'BM', total size 630 or 632, 16x12, 24bpp. Pure — unit tested.
+    static bool GuildmarkIsCorrectBMP(const uint8_t* data, size_t size);
+
+    // Decodes + uploads the BMP into a slot. GL context required. Existing
+    // content is replaced (original refuses overwrite; the download path
+    // always targets a free/stale slot — Replace is the useful semantic here).
+    bool LoadGuildTexture(int index, const uint8_t* data, size_t size);
+
+    // GL texture of a slot (0 = empty).
+    GLuint GetGuildMarkTexture(int index) const;
+    void   ClearGuildMark(int index);
+
 private:
     // Shared loader for the 528-byte-record lists (A half = stTextureListInfo).
     bool LoadList528(const uint8_t* data, size_t size, size_t maxEntries,
@@ -115,6 +135,9 @@ private:
     std::vector<int>              m_uiTexH;
     ControlTextureSet             m_uiSets[UI_SET_COUNT];
     bool                          m_uiSetsLoaded = false;
+
+    // Guild marks (64 x 16x12 BMP, HTTP-downloaded)
+    GLuint m_guildMarks[GUILD_MARK_COUNT] = {};
 };
 
 // Sampler objects for the phase-1 state blocks (10 §10.4).
@@ -124,6 +147,8 @@ namespace GLSamplers {
     GLuint PointNoMip();   // block 2 (fonts)
     void   Init();
     void   Destroy();
+    // Anisotropic filtering on the world sampler (phase 7 config). 1 = off.
+    void   SetAnisotropy(int level);
 }
 
 }

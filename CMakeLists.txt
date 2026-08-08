@@ -40,9 +40,21 @@ add_library(tmcore STATIC
   src/platform/PlatformFile.cpp
   src/platform/PlatformLog.cpp
   src/math/TMMath.cpp
-  src/net/CPSock.cpp)
-target_include_directories(tmcore PUBLIC src)
+  src/net/CPSock.cpp
+  src/net/HttpClient.cpp
+  src/platform/GameConfig.cpp
+  src/audio/AudioEngine.cpp
+  src/audio/miniaudio_impl.cpp)
+target_include_directories(tmcore PUBLIC src extern)
 target_link_libraries(tmcore PUBLIC SDL3::SDL3-static)
+# miniaudio backends (Linux): pthread/dl/m
+if(UNIX AND NOT APPLE)
+  target_link_libraries(tmcore PUBLIC pthread dl m)
+endif()
+# HttpClient sockets (Windows)
+if(WIN32)
+  target_link_libraries(tmcore PUBLIC ws2_32)
+endif()
 
 target_compile_definitions(tmcore PRIVATE
   $<$<PLATFORM_ID:Darwin>:GL_SILENCE_DEPRECATION>)
@@ -69,7 +81,9 @@ set(TM_SHADER_FILES
   ${CMAKE_SOURCE_DIR}/src/gl/shaders/fx_skillmesh.vert
   ${CMAKE_SOURCE_DIR}/src/gl/shaders/fx_skillmesh.frag
   ${CMAKE_SOURCE_DIR}/src/gl/shaders/fx_decal.vert
-  ${CMAKE_SOURCE_DIR}/src/gl/shaders/fx_decal.frag)
+  ${CMAKE_SOURCE_DIR}/src/gl/shaders/fx_decal.frag
+  ${CMAKE_SOURCE_DIR}/src/gl/shaders/blit.vert
+  ${CMAKE_SOURCE_DIR}/src/gl/shaders/blit.frag)
 set(TM_SHADERS_H ${CMAKE_BINARY_DIR}/generated/shaders_embedded.h)
 add_custom_command(
   OUTPUT ${TM_SHADERS_H}

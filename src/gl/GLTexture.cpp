@@ -2,6 +2,8 @@
 
 #include "platform/Platform.h"
 
+#include <SDL3/SDL.h>
+
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
@@ -258,6 +260,11 @@ void GLTextureManager::DestroyAll() {
         if (t)
             glDeleteTextures(1, &t);
     }
+    for (GLuint& t : m_guildMarks) {
+        if (t)
+            glDeleteTextures(1, &t);
+        t = 0;
+    }
     m_textures.clear();
     m_entries.clear();
     m_envTextures.clear();
@@ -370,6 +377,67 @@ void GLTextureManager::GetUITextureSize(int index, int* w, int* h) {
     if (h) *h = (index >= 0 && index < (int)m_uiTexH.size()) ? m_uiTexH[index] : 0;
 }
 
+// --- Guild marks (Phase 7) ---
+
+bool GLTextureManager::GuildmarkIsCorrectBMP(const uint8_t* data, size_t size) {
+    // TMFieldScene.cpp:22678-22697 — 'BM', file size 630|632, 16x12, 24bpp.
+    if (!data || size < 54)
+        return false;
+    const uint16_t bfType = (uint16_t)(data[0] | (data[1] << 8));
+    if (bfType != 19778)
+        return false;
+    const uint32_t bfSize = (uint32_t)(data[2] | (data[3] << 8) | (data[4] << 16) | (data[5] << 24));
+    if (bfSize != 630 && bfSize != 632)
+        return false;
+    // BITMAPINFOHEADER at offset 14: width(4) height(4) planes(2) bitCount(2)
+    const int32_t biW = (int32_t)(data[18] | (data[19] << 8) | (data[20] << 16) | (data[21] << 24));
+    const int32_t biH = (int32_t)(data[22] | (data[23] << 8) | (data[24] << 16) | (data[25] << 24));
+    const uint16_t biBits = (uint16_t)(data[28] | (data[29] << 8));
+    return biW == GUILD_MARK_W && biH == GUILD_MARK_H && biBits == 24;
+}
+
+bool GLTextureManager::LoadGuildTexture(int index, const uint8_t* data, size_t size) {
+    if (index < 0 || index >= GUILD_MARK_COUNT)
+        return false;
+    if (!GuildmarkIsCorrectBMP(data, size))
+        return false;
+
+    int w = 0, h = 0, comp = 0;
+    uint8_t* rgba = stbi_load_from_memory(data, (int)size, &w, &h, &comp, 4);
+    if (!rgba)
+        return false;
+
+    if (m_guildMarks[index]) {
+        glDeleteTextures(1, &m_guildMarks[index]);
+        m_guildMarks[index] = 0;
+    }
+    GLuint tex = 0;
+    glGenTextures(1, &tex);
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    stbi_image_free(rgba);
+
+    m_guildMarks[index] = tex;
+    return true;
+}
+
+GLuint GLTextureManager::GetGuildMarkTexture(int index) const {
+    return (index >= 0 && index < GUILD_MARK_COUNT) ? m_guildMarks[index] : 0;
+}
+
+void GLTextureManager::ClearGuildMark(int index) {
+    if (index >= 0 && index < GUILD_MARK_COUNT && m_guildMarks[index]) {
+        glDeleteTextures(1, &m_guildMarks[index]);
+        m_guildMarks[index] = 0;
+    }
+}
+
 namespace GLSamplers {
 
 static GLuint s_linearMip = 0;
@@ -397,6 +465,20 @@ void Init() {
     glSamplerParameteri(s_pointNoMip, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glSamplerParameteri(s_pointNoMip, GL_TEXTURE_WRAP_S, GL_REPEAT);
     glSamplerParameteri(s_pointNoMip, GL_TEXTURE_WRAP_T, GL_REPEAT);
+}
+
+void SetAnisotropy(int level) {
+    // GL_EXT_texture_filter_anisotropic on the world sampler only (UI/fonts
+    // stay bilinear). level 1 = off; clamped to the implementation maximum.
+    if (!s_linearMip)
+        return;
+    GLfloat maxAniso = 1.0f;
+    if (SDL_GL_ExtensionSupported("GL_EXT_texture_filter_anisotropic"))
+        glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, &maxAniso);
+    GLfloat v = (GLfloat)level;
+    if (v > maxAniso) v = maxAniso;
+    if (v < 1.0f) v = 1.0f;
+    glSamplerParameterf(s_linearMip, GL_TEXTURE_MAX_ANISOTROPY_EXT, v);
 }
 
 void Destroy() {

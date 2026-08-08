@@ -20,9 +20,22 @@ public:
     bool Init(SDL_Window* window);
     void Shutdown();
 
-    void BeginFrame();   // uploads FrameData UBO
+    void BeginFrame();   // binds the scene target + uploads FrameData UBO
     void Clear(float r, float g, float b, float a);
-    void EndFrame();     // swap
+    void EndFrame();     // resolve + blit (bright gain) + swap
+
+    // Offscreen scene target + final blit (phase 7, doc 21 §5): the scene
+    // renders into an FBO and EndFrame blits it to the backbuffer applying
+    // uBright (the D3D gamma ramp was a pure linear gain). MSAA via a
+    // multisample renderbuffer + resolve. Single code path — when samples<2
+    // the scene renders directly into the single-sample FBO.
+    bool CreateTargets(int w, int h, int samples);
+    void DestroyTargets();
+    int  TargetW() const { return m_targetW; }
+    int  TargetH() const { return m_targetH; }
+    int  MSAASamples() const { return m_samples; }
+    void SetBrightGain(float gain) { m_brightGain = gain; } // bright*0.02
+    float BrightGain() const { return m_brightGain; }
 
     // Presets (05 §5.2): 0 = UI quad, 1 = 3D scene. Only these two exist in phase 1.
     void SetRenderStateBlock(int n);
@@ -84,6 +97,14 @@ private:
 
     int   m_drawCalls = 0;
     bool  m_block1 = false;  // current preset == scene 3D
+
+    // Phase 7 offscreen pipeline
+    GLShader m_blit;
+    GLuint   m_emptyVao  = 0;
+    GLuint   m_fbo       = 0, m_fboTex  = 0, m_fboDepth  = 0;  // single-sample
+    GLuint   m_msaaFbo   = 0, m_msaaColor = 0, m_msaaDepth = 0; // multisample
+    int      m_targetW   = 0, m_targetH = 0, m_samples = 0;
+    float    m_brightGain = 1.0f;
 };
 
 }

@@ -116,6 +116,22 @@ struct ProjectileDesc {
     float splashRadius = 1.0f;
     bool  arc = false;         // type 152 hop
 };
+
+// TMArrow 13-tipos data-table (phase 7, doc 21 §8): (type, level, color) ->
+// visual/timing parameters, ported from the switch in TMArrow.cpp:45-145.
+// Mesh indices point at MeshList models (the original renders the arrow mesh
+// during travel; our trail-based renderer keeps the trail visual and uses the
+// table for lifetime/sound/beam — mesh-index rendering is cosmetic, deferred).
+struct ArrowTypeInfo {
+    int   meshIndex = 800;      // 800 = default wooden arrow
+    int   lifePerUnitMs = 50;   // lifetime = lifePerUnit * distance (clamped 1..5000)
+    int   fixedLifeMs = 0;      // >0 overrides the distance formula (types 10002/3)
+    float beamSize = 0.0f;      // 0 = no beam trail (types 104/105)
+    uint32_t beamColor = 0x00777777;
+    int   soundId = 0;          // fire sound (0 = silent)
+    int   impactSoundId = 24;   // 26 for some hits, 24 default (TMArrow.cpp:674-678)
+};
+ArrowTypeInfo GetArrowTypeInfo(int type, int level, int color);
 class Projectile : public SkillEffect {
 public:
     Projectile(const ProjectileDesc& d);

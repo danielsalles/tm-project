@@ -10,6 +10,9 @@
 #include <vector>
 
 #include "platform/Platform.h"
+#include "platform/GameConfig.h"
+#include "audio/AudioEngine.h"
+#include "net/HttpClient.h"
 #include "gl/GLRenderDevice.h"
 #include "gl/GLMesh.h"
 #include "gl/GLTexture.h"
@@ -18,8 +21,10 @@
 #include "gl/GLFont.h"
 #include "ui/UILoader.h"
 #include "ui/SControlContainer.h"
+#include "ui/SControls.h"
 #include "ui/RenderGeomControl.h"
 #include "scene/FieldView.h"
+#include "scene/CameraGestures.h"
 #include "world/SkyDome.h"
 #include "world/SunFlare.h"
 #include "world/TerrainData.h"
@@ -27,6 +32,14 @@
 #include "world/SwingTrail.h"
 
 #include <ctime>
+#include <thread>
+#include <atomic>
+
+#ifdef _WIN32
+#include <direct.h>
+#else
+#include <sys/stat.h>
+#endif
 
 static void WriteBootReport(const char* path) {
     FILE* f = fopen(path, "w");
@@ -89,6 +102,28 @@ static void SaveScreenshot(SDL_Window* window, const char* path) {
         tmx::Log("screenshot falhou: %s", path);
 }
 
+// D3DDevice::CaptureScreen parity (D3DDevice.cpp:1050-1075): first free
+// ScreenShot\Capture%04d.bmp (0000-9999), BMP 24-bit.
+static void CaptureScreen(SDL_Window* window) {
+    char path[128];
+    for (int n = 0; n <= 9999; ++n) {
+        snprintf(path, sizeof path, "ScreenShot/Capture%04d.bmp", n);
+        FILE* f = fopen(path, "rb");
+        if (!f)
+            break;
+        fclose(f);
+        if (n == 9999)
+            return; // all slots taken — original silently stops too
+    }
+    // Best-effort dir creation (no-op when it already exists).
+#ifdef _WIN32
+    _mkdir("ScreenShot");
+#else
+    mkdir("ScreenShot", 0755);
+#endif
+    SaveScreenshot(window, path);
+}
+
 int main(int argc, char** argv) {
     // --shot <path> [frames N]: render N frames, save screenshot, exit (automation/CI)
     // --map FieldXXYY: pick the ground/scene (default Field2723 = select-server)
@@ -122,6 +157,17 @@ int main(int argc, char** argv) {
     int monsterClass = -1;
     bool uiDemo = false;
     char uiSceneName[32] = "";
+    // Phase 7 (doc 21): platform parity flags
+    int optSound = -1;     // -1 = Config.bin
+    int optMusic = -1;
+    int optBright = -1;
+    int optMSAA = 0;
+    int optAniso = 1;
+    int optRes = -1;
+    bool optNoSound = false;
+    bool optNoMusic = false;
+    bool optFullscreen = false;
+    char guildMarkUrl[256] = "";
     for (int i = 1; i < argc; ++i) {
         if (!strcmp(argv[i], "--shot") && i + 1 < argc)
             shotPath = argv[++i];
@@ -197,7 +243,38 @@ int main(int argc, char** argv) {
             if (i + 1 < argc && argv[i + 1][0] != '-')
                 snprintf(uiSceneName, sizeof uiSceneName, "%s", argv[++i]);
         }
+        else if (!strcmp(argv[i], "--no-sound"))
+            optNoSound = true;
+        else if (!strcmp(argv[i], "--no-music"))
+            optNoMusic = true;
+        else if (!strcmp(argv[i], "--volume") && i + 1 < argc)
+            optSound = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--musicvol") && i + 1 < argc)
+            optMusic = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--bright") && i + 1 < argc)
+            optBright = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--msaa") && i + 1 < argc)
+            optMSAA = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--aniso") && i + 1 < argc)
+            optAniso = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--res") && i + 1 < argc)
+            optRes = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--fullscreen"))
+            optFullscreen = true;
+        else if (!strcmp(argv[i], "--guildurl") && i + 1 < argc)
+            snprintf(guildMarkUrl, sizeof guildMarkUrl, "%s", argv[++i]);
     }
+
+    // Config.bin (phase 7 §5): boot settings, CLI flags override.
+    tmx::GameConfig config;
+    const bool configLoaded = config.Load("Config.bin");
+    if (optSound >= 0) config.SetSound(optSound);
+    if (optMusic >= 0) config.SetMusic(optMusic);
+    if (optBright >= 0) config.SetBright(optBright);
+    if (optRes >= 0) config.SetResIndex(optRes);
+    if (optFullscreen) config.slot[8] = 0;
+    const bool camRotInvert = config.CameraRotInverted();
+    const bool quarterView = config.QuarterView();
 
     if (!SDL_Init(SDL_INIT_VIDEO)) {
         SDL_Log("SDL_Init falhou: %s", SDL_GetError());
@@ -212,8 +289,14 @@ int main(int argc, char** argv) {
     SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE, 8);
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
 
+    int winW = 1024, winH = 768;
+    if (configLoaded)
+        tmx::GameConfig::ResolutionWH(config.ResIndex(), winW, winH);
+    SDL_WindowFlags winFlags = SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE;
+    if (!config.Windowed())
+        winFlags |= SDL_WINDOW_FULLSCREEN;
     SDL_Window* window = SDL_CreateWindow("TMProject (OpenGL port)",
-        1024, 768, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE);
+        winW, winH, winFlags);
     if (!window) {
         SDL_Log("SDL_CreateWindow falhou: %s", SDL_GetError());
         SDL_Quit();
@@ -262,6 +345,29 @@ int main(int argc, char** argv) {
         SDL_DestroyWindow(window);
         SDL_Quit();
         return 1;
+    }
+
+    // Phase 7: offscreen pipeline (bright blit + MSAA) + aniso.
+    {
+        int pw = 0, ph = 0;
+        SDL_GetWindowSizeInPixels(window, &pw, &ph);
+        if (!getenv("TM_NOFBO"))
+            device.CreateTargets(pw, ph, optMSAA);
+        device.SetBrightGain(config.BrightGain());
+        tmx::GLSamplers::SetAnisotropy(optAniso);
+    }
+
+    // Phase 7: audio (miniaudio). Sound sliders from Config.bin; --no-sound /
+    // --no-music map to runtime mute (original slider 0 is -25dB, not mute).
+    tmx::AudioEngine audio;
+    if (!optNoSound) {
+        if (audio.Init()) {
+            audio.LoadSoundList("sound/soundlist.txt");
+            audio.SetSoundVolume(config.Sound());
+            audio.SetMusicVolume(config.Music());
+            if (optNoMusic)
+                audio.SetMusicVolume(0);
+        }
     }
 
     // --- phase 2 scene: terrain + static objects of one map (assets NOT in the repo) ---
@@ -393,6 +499,35 @@ int main(int argc, char** argv) {
                 tmx::Log("UI bin nao encontrado: %s", binPath);
             }
         }
+    }
+
+    // Phase 7: BGM by mode (DirShow.cpp:7-23 table) — login music for the UI
+    // scene, field01 for the 3D world. Corte seco, fiel ao original.
+    if (audio.IsReady()) {
+        if (uiDemo)
+            audio.PlayMusic(0);   // music/login.mp3
+        else if (sceneLoaded)
+            audio.PlayMusic(2);   // music/field01.mp3
+    }
+
+    // Phase 7: guild mark download demo (--guildurl). Thread baixa o BMP
+    // (Guildmark_Download, TMFieldScene.cpp:24422); o upload GL acontece na
+    // main thread no loop (nunca GL fora dela).
+    std::vector<uint8_t> guildMarkBuf;
+    std::atomic<bool> guildMarkReady{false};
+    std::thread guildThread;
+    if (guildMarkUrl[0]) {
+        guildThread = std::thread([&]() {
+            char buf[1024];
+            const int n = tmx::HttpGet(guildMarkUrl, buf, sizeof buf);
+            if (n > 0 &&
+                tmx::GLTextureManager::GuildmarkIsCorrectBMP((const uint8_t*)buf, (size_t)n)) {
+                guildMarkBuf.assign(buf, buf + n);
+                guildMarkReady = true;
+            } else {
+                tmx::Log("guildmark: download/validacao falhou (%d bytes)", n);
+            }
+        });
     }
 
     // Sky dome + weather (phase 2 D4). Default weather = day-of-month % 4 like the
@@ -549,6 +684,13 @@ int main(int argc, char** argv) {
     bool running = true;
     bool mouseLook = false;
     float mousePx = hoverPx, mousePy = hoverPy;
+    // Phase 7 camera gestures (EventTranslator.cpp:193-461): middle-button or
+    // Alt+right-button drag rotates; Alt alone drag zooms (wheel = 3*dy).
+    bool midDrag = false;
+    bool altRightDrag = false;
+    bool rightDown = false;
+    float rightDragDist = 0.0f;
+    const float fClose = (mountType >= 0) ? 2.5f : 1.2f; // +Con*0.00019 no original
     while (running) {
         SDL_Event e;
         while (SDL_PollEvent(&e)) {
@@ -569,6 +711,25 @@ int main(int argc, char** argv) {
                              (e.key.key == SDLK_RETURN) ? '\r' : '\t';
                     uiContainer.OnCharEvent(c);
                 }
+                else if (uiDemo && (e.key.mod & (SDL_KMOD_CTRL | SDL_KMOD_GUI)) &&
+                         (e.key.key == SDLK_V || e.key.key == SDLK_C || e.key.key == SDLK_X)) {
+                    // Clipboard for the focused editable control (phase 7).
+                    auto* edit = dynamic_cast<tmx::SEditableText*>(uiContainer.GetFocusControl());
+                    if (edit) {
+                        if (e.key.key == SDLK_V) {
+                            char* clip = SDL_GetClipboardText();
+                            if (clip) {
+                                for (const char* p = clip; *p; ++p)
+                                    edit->OnCharEvent(*p);
+                                SDL_free(clip);
+                            }
+                        } else {
+                            SDL_SetClipboardText(edit->GetText());
+                            if (e.key.key == SDLK_X)
+                                edit->SetText("");
+                        }
+                    }
+                }
                 else if (e.key.key == SDLK_F) {
                     if (myChar) {
                         follow = !follow;
@@ -585,12 +746,12 @@ int main(int argc, char** argv) {
                         myChar->SetMaxSpeed(run ? 4.0f : 2.0f);
                         break;
                     }
-                    case SDLK_1: myChar->SetMotion(tmx::CharMotion::Attack01, nowMs); break;
-                    case SDLK_2: myChar->SetMotion(tmx::CharMotion::Attack02, nowMs); break;
-                    case SDLK_3: myChar->SetMotion(tmx::CharMotion::Attack03, nowMs); break;
-                    case SDLK_4: myChar->SetMotion(tmx::CharMotion::Attack04, nowMs); break;
-                    case SDLK_5: myChar->SetMotion(tmx::CharMotion::Attack05, nowMs); break;
-                    case SDLK_6: myChar->SetMotion(tmx::CharMotion::Attack06, nowMs); break;
+                    case SDLK_1: myChar->SetMotion(tmx::CharMotion::Attack01, nowMs); audio.PlaySound(9); break;
+                    case SDLK_2: myChar->SetMotion(tmx::CharMotion::Attack02, nowMs); audio.PlaySound(9); break;
+                    case SDLK_3: myChar->SetMotion(tmx::CharMotion::Attack03, nowMs); audio.PlaySound(9); break;
+                    case SDLK_4: myChar->SetMotion(tmx::CharMotion::Attack04, nowMs); audio.PlaySound(9); break;
+                    case SDLK_5: myChar->SetMotion(tmx::CharMotion::Attack05, nowMs); audio.PlaySound(9); break;
+                    case SDLK_6: myChar->SetMotion(tmx::CharMotion::Attack06, nowMs); audio.PlaySound(9); break;
                     case SDLK_8: myChar->SetMotion(tmx::CharMotion::Stand01, nowMs); break;
                     case SDLK_9: myChar->SetMotion(tmx::CharMotion::LevelUp, nowMs); break;
                     case SDLK_0: myChar->SetMotion(tmx::CharMotion::Die, nowMs); break;
@@ -622,23 +783,54 @@ int main(int argc, char** argv) {
                     }
                 }
                 break;
+            case SDL_EVENT_KEY_UP:
+                // Original: VK_SNAPSHOT on WM_KEYUP (NewApp.cpp:953-955).
+                if (e.key.key == SDLK_PRINTSCREEN)
+                    CaptureScreen(window);
+                break;
             case SDL_EVENT_MOUSE_BUTTON_DOWN:
+                if (e.button.button == SDL_BUTTON_MIDDLE && !quarterView) {
+                    midDrag = true;
+                    SDL_SetWindowRelativeMouseMode(window, true);
+                } else if (e.button.button == SDL_BUTTON_RIGHT) {
+                    rightDown = true;
+                    rightDragDist = 0.0f;
+                    const SDL_Keymod mod = SDL_GetModState();
+                    if ((mod & SDL_KMOD_ALT) && !quarterView) {
+                        altRightDrag = true;
+                        SDL_SetWindowRelativeMouseMode(window, true);
+                    }
+                }
                 if (e.button.button == SDL_BUTTON_LEFT) {
                     if (uiDemo && uiContainer.OnMouseEvent(tmx::WM_LBUTTONDOWN, 1,
                                                            (int)e.button.x, (int)e.button.y))
                         break;  // UI consumed the click
-                    mouseLook = true;
-                    SDL_SetWindowRelativeMouseMode(window, true);
+                    mouseLook = !follow;  // follow mode: L-drag is UI/walk, not look
+                    if (mouseLook)
+                        SDL_SetWindowRelativeMouseMode(window, true);
                 }
                 break;
             case SDL_EVENT_MOUSE_BUTTON_UP:
+                if (e.button.button == SDL_BUTTON_MIDDLE) {
+                    midDrag = false;
+                    SDL_SetWindowRelativeMouseMode(window, false);
+                }
                 if (e.button.button == SDL_BUTTON_LEFT) {
-                    if (uiDemo)
-                        uiContainer.OnMouseEvent(tmx::WM_LBUTTONUP, 0,
-                                                 (int)e.button.x, (int)e.button.y);
+                    if (uiDemo) {
+                        if (uiContainer.OnMouseEvent(tmx::WM_LBUTTONUP, 0,
+                                                     (int)e.button.x, (int)e.button.y))
+                            audio.PlaySound(33); // UI click (TMFieldScene.cpp passim)
+                    }
                     mouseLook = false;
                     SDL_SetWindowRelativeMouseMode(window, false);
-                } else if (e.button.button == SDL_BUTTON_RIGHT && view.HasTerrain()) {
+                } else if (e.button.button == SDL_BUTTON_RIGHT) {
+                    const bool wasDrag = rightDragDist > 5.0f;
+                    rightDown = false;
+                    if (altRightDrag) {
+                        altRightDrag = false;
+                        SDL_SetWindowRelativeMouseMode(window, false);
+                    }
+                    if (!wasDrag && view.HasTerrain()) {
                     // Pick: unproject the click point through inverse(view*proj).
                     int w = 0, h = 0;
                     SDL_GetWindowSizeInPixels(window, &w, &h);
@@ -669,24 +861,44 @@ int main(int argc, char** argv) {
                     } else {
                         tmx::Log("pick: nada");
                     }
+                    }
                 }
                 break;
-            case SDL_EVENT_MOUSE_MOTION:
+            case SDL_EVENT_MOUSE_MOTION: {
                 if (hoverPx >= 0.0f)   // --hoverpx automation: ignore real mouse
                     break;
                 mousePx = e.motion.x;
                 mousePy = e.motion.y;
+                if (rightDown)
+                    rightDragDist += fabsf(e.motion.xrel) + fabsf(e.motion.yrel);
                 if (uiDemo) {
                     unsigned int wp = (e.motion.state & SDL_BUTTON_LMASK) ? 1u : 0u;
                     uiContainer.OnMouseEvent(tmx::WM_MOUSEMOVE, wp,
                                              (int)e.motion.x, (int)e.motion.y);
                 }
-                if (mouseLook) {
+                // Camera gestures (EventTranslator.cpp:251-330): middle-drag or
+                // Alt+right-drag rotate with the original constants; Alt alone
+                // turns the drag into a zoom (wheel = 3*dy).
+                tmx::FollowCam followCam{camYaw, camPitch, followDist};
+                const tmx::CameraGestureCfg gestureCfg{camRotInvert, quarterView, fClose, 14.0f};
+                if ((midDrag || altRightDrag) && follow) {
+                    tmx::CameraRotate(followCam, e.motion.xrel, e.motion.yrel, gestureCfg);
+                    camYaw = followCam.yaw;
+                    camPitch = followCam.pitch;
+                } else if (follow && rightDown && (SDL_GetModState() & SDL_KMOD_ALT)) {
+                    tmx::CameraAltDragZoom(followCam, e.motion.yrel, gestureCfg);
+                    followDist = followCam.dist;
+                } else if (mouseLook) {
                     camYaw   += e.motion.xrel * 0.003f;
                     camPitch -= e.motion.yrel * 0.003f;
                     if (camPitch >  1.5f) camPitch =  1.5f;
                     if (camPitch < -1.5f) camPitch = -1.5f;
                 }
+                break;
+            }
+            case SDL_EVENT_TEXT_EDITING:
+                if (uiDemo)
+                    uiContainer.OnEditingEvent(e.edit.text);
                 break;
             case SDL_EVENT_TEXT_INPUT:
                 if (uiDemo) {
@@ -694,17 +906,20 @@ int main(int argc, char** argv) {
                         uiContainer.OnCharEvent(*p);
                 }
                 break;
-            case SDL_EVENT_MOUSE_WHEEL:
+            case SDL_EVENT_MOUSE_WHEEL: {
                 if (follow) {
-                    followDist -= e.wheel.y * 0.8f;
-                    if (followDist < 3.0f) followDist = 3.0f;
-                    if (followDist > 14.0f) followDist = 14.0f;
+                    tmx::FollowCam followCam{camYaw, camPitch, followDist};
+                    tmx::CameraZoom(followCam, e.wheel.y * 0.8f,
+                                    {camRotInvert, quarterView, fClose, 14.0f});
+                    followDist = followCam.dist;
                 }
                 break;
+            }
             case SDL_EVENT_WINDOW_RESIZED: {
                 int w = 0, h = 0;
                 SDL_GetWindowSizeInPixels(window, &w, &h);
                 glViewport(0, 0, w, h);
+                device.CreateTargets(w, h, optMSAA);
                 D3DXMatrixPerspectiveFovLH(&matProj, 0.25f * D3DXToRadian(180),
                                            (float)w / (float)h, 0.69f * 1.4f, 540.0f);
                 break;
@@ -757,6 +972,42 @@ int main(int argc, char** argv) {
             view.SetFxFrame(fxInfo);
             view.SetWeatherFx(weather);   // 2 = rain, 3 = snow, else off
         }
+
+        // Phase 7: weather ambience (TMRain.cpp:64 / TMSnow.cpp:69 — the
+        // original calls PlayIfNot every frame to keep the loop alive).
+        if (audio.IsReady() && sceneLoaded) {
+            static int ambWeather = -1;
+            if (weather != ambWeather) {
+                if (ambWeather == 2) audio.StopSound(101);
+                if (ambWeather == 3) audio.StopSound(113);
+                ambWeather = weather;
+            }
+            if (weather == 2) audio.PlaySoundIfNot(101);
+            else if (weather == 3) audio.PlaySoundIfNot(113);
+        }
+
+        // Phase 7: IME input area follows the focused edit box (SDL3 IME popup).
+        if (uiDemo) {
+            static tmx::SControl* lastFocus = nullptr;
+            tmx::SControl* focus = uiContainer.GetFocusControl();
+            if (focus != lastFocus) {
+                lastFocus = focus;
+                float ax = 0, ay = 0; // absolute pos via parent chain
+                for (tmx::SControl* c = focus; c; c = c->m_pParent) {
+                    ax += c->m_nPosX;
+                    ay += c->m_nPosY;
+                }
+                SDL_Rect area{ (int)ax, (int)(ay + (focus ? focus->m_nHeight : 0)), 200, 24 };
+                SDL_SetTextInputArea(window, &area, 0);
+            }
+        }
+
+        // Phase 7: guild mark upload on the main thread (download thread never
+        // touches GL).
+        if (guildMarkReady.exchange(false)) {
+            if (textures.LoadGuildTexture(0, guildMarkBuf.data(), guildMarkBuf.size()))
+                tmx::Log("guildmark: textura carregada no slot 0");
+        }
         // Mouse-over highlight (TMFieldScene green emissive).
         if (sceneLoaded && !mouseLook) {
             float ro[3], rd[3];
@@ -807,15 +1058,18 @@ int main(int argc, char** argv) {
                         r.x, y, r.z, 56, 1200, 1.1f, 0xFF44FF44));
                     view.AddSkillEffect(std::make_unique<tmx::SkillBurst>(
                         r.x, y, r.z, 56, 1200, 14, 0.8f, 0.5f, 0xFF22AA22));
+                    audio.PlaySound(4);   // TMSkillCure.cpp:74
                 } else if (!strcmp(r.name, "meteor")) {
                     view.AddSkillEffect(std::make_unique<tmx::MeteorStorm>(
                         r.x, y, r.z, r.level, nowMs));
+                    audio.PlaySound(151); // meteor loop (TMFieldScene.cpp:20356)
                 } else if (!strcmp(r.name, "shield")) {
                     view.AddSkillEffect(std::make_unique<tmx::MagicShield>(
                         r.x, y, r.z, 4000, 0xFF55AAFF));
                 } else if (!strcmp(r.name, "fire")) {
                     view.AddSkillEffect(std::make_unique<tmx::SkillGlow>(
                         r.x, y, r.z, 11, 1500, 1.0f, 0xFFAA3300));
+                    audio.PlaySound(152); // TMSkillThunderBolt.cpp:50
                     if (terr) {
                         tmx::GroundDecalDesc dd; dd.gridNum = 5; dd.textureIndex = 7;
                         dd.bgra = 0xFFFF5500; dd.blend = 1; dd.lifeTime = 1500;
@@ -834,6 +1088,7 @@ int main(int argc, char** argv) {
                 pd.targetY = tmx::TerrainGetHeight(*terr, arrowTarget[0], arrowTarget[1]);
                 pd.trailTex = 0; pd.impactMeshIndex = -1; pd.impactDecalTex = 118;
                 view.AddSkillEffect(MakeSkillEffect<tmx::Projectile>(nowMs, pd));
+                audio.PlaySound(133); // TMArrow type 151 fire (TMArrow.cpp:61)
             }
         }
 
@@ -870,6 +1125,7 @@ int main(int argc, char** argv) {
                 swingCycle = nowMs;
                 myChar->SetMotion(tmx::CharMotion::Attack01, nowMs);
                 myChar->AttachSwing(swingFx, 0.9f, nowMs, 600);
+                audio.PlaySound(9); // swing whoosh (TMBike.cpp:46 uses 9 too)
             }
         }
 
@@ -930,6 +1186,10 @@ int main(int argc, char** argv) {
     }
 
     tmx::Log("shutdown limpo");
+    if (guildThread.joinable())
+        guildThread.join();
+    config.Save("Config.bin"); // phase 7: persist boot settings
+    audio.Shutdown();
     sky.Destroy();
     view.Destroy();
     fallbackMesh.Destroy();

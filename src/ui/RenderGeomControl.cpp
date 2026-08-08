@@ -52,11 +52,28 @@ void RenderGeomControl::Render(GeomControl* ctrl) {
             break;
 
         case RENDER_3DOBJ:
-            // 3D objects in UI — deferred to Phase 7
+            // 3D objects in UI — deferred to Phase 8
             break;
 
         default:
             break;
+    }
+
+    // Guild mark overlay (RenderDevice.cpp:3160-3230): 16x12 BMP drawn over
+    // the panel corner; gold/silver backing rect for layouts 1/2.
+    if (ctrl->nMarkIndex >= 0 && ctrl->nMarkIndex < GLTextureManager::GUILD_MARK_COUNT &&
+        m_tex && m_ui) {
+        GLuint mark = m_tex->GetGuildMarkTexture(ctrl->nMarkIndex);
+        if (mark) {
+            const float iX = ctrl->nPosX - 2.0f;
+            const float iY = ctrl->nPosY - 2.0f;
+            if (ctrl->nMarkLayout == 1)
+                m_ui->RenderRectNoTex(iX, iY, 20.0f, 16.0f, 0xFFFFD700, true);
+            else if (ctrl->nMarkLayout == 2)
+                m_ui->RenderRectNoTex(iX, iY, 20.0f, 16.0f, 0xFFC0C0C0, true);
+            m_ui->RenderRect(0.0f, 0.0f, 16.0f, 12.0f, iX, iY, mark, 16, 12,
+                             1.0f, 1.0f);
+        }
     }
 }
 

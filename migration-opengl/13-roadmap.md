@@ -123,7 +123,7 @@ glows de monstro, montarias). Sem netcode/dano real.
 
 **Saída**: jogo completo jogável end-to-end (HUD, inventário, chat, menus).
 
-## Fase 7 — Paridade de plataforma (1-2 semanas) (plano: `21-fase7-plataforma.md`)
+## Fase 7 — Paridade de plataforma (1-2 semanas) ✅ (plano/retrospectiva: `21-fase7-plataforma.md`)
 
 34. Input completo (DirectInput→SDL): gestos de câmera fiéis (middle-drag/Alt+RMB
     0.002/0.0049, wheel com fClose, inversão, quarter-view), IME básico

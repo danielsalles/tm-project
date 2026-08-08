@@ -21,5 +21,8 @@ int64_t FileSize(const char* relPath);
 const std::string& DataDir();
 // Overrides the asset base dir (tests point it at the repo root).
 void SetDataDir(const char* path);
+// Full filesystem path of an existing asset ("" when not found). For
+// libraries that open files by path themselves (e.g. miniaudio).
+std::string ResolveAssetPath(const char* relPath);
 
 }

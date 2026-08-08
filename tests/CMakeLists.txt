@@ -25,7 +25,11 @@ add_executable(tm_tests
   test_skillmesh.cpp
   test_swing.cpp
   test_skills_golden.cpp
-  test_ui.cpp)
+  test_ui.cpp
+  test_audio.cpp
+  test_config.cpp
+  test_http.cpp
+  test_input.cpp)
 target_link_libraries(tm_tests PRIVATE tmcore tmgl)
 
 # dados dourados acessíveis por path relativo ao diretório do teste
@@ -63,4 +67,8 @@ add_test(NAME skillmesh  COMMAND tm_tests skillmesh)
 add_test(NAME swing     COMMAND tm_tests swing)
 add_test(NAME skills    COMMAND tm_tests skills)
 add_test(NAME ui        COMMAND tm_tests ui)
+add_test(NAME audio     COMMAND tm_tests audio)
+add_test(NAME config    COMMAND tm_tests config)
+add_test(NAME http      COMMAND tm_tests http)
+add_test(NAME input     COMMAND tm_tests input)
 add_test(NAME glsmoke    COMMAND tm_glsmoke)
