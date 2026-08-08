@@ -23,6 +23,13 @@ struct GLStateCache {
     GLuint texture[2] = { 0, 0 };
     GLuint sampler[2] = { 0, 0 };
 
+    // Scissor test (Phase 6 — UI panel clipping).
+    bool   scissorEnabled = false;
+    int    scissorX = 0, scissorY = 0, scissorW = 0, scissorH = 0;
+
+    void SetScissor(int x, int y, int w, int h);
+    void DisableScissor();
+
     // Applies only what changed. Call once per draw, before issuing it.
     void Apply();
 

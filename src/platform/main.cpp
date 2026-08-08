@@ -13,6 +13,12 @@
 #include "gl/GLRenderDevice.h"
 #include "gl/GLMesh.h"
 #include "gl/GLTexture.h"
+#include "gl/UIBatcher.h"
+#include "gl/UIRenderer.h"
+#include "gl/GLFont.h"
+#include "ui/UILoader.h"
+#include "ui/SControlContainer.h"
+#include "ui/RenderGeomControl.h"
 #include "scene/FieldView.h"
 #include "world/SkyDome.h"
 #include "world/SunFlare.h"
@@ -114,6 +120,8 @@ int main(int argc, char** argv) {
     bool arrowSet = false;
     int mountType = -1;
     int monsterClass = -1;
+    bool uiDemo = false;
+    char uiSceneName[32] = "";
     for (int i = 1; i < argc; ++i) {
         if (!strcmp(argv[i], "--shot") && i + 1 < argc)
             shotPath = argv[++i];
@@ -183,6 +191,12 @@ int main(int argc, char** argv) {
             mountType = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--class") && i + 1 < argc)
             monsterClass = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--ui")) {
+            uiDemo = true;
+            // optional scene name: --ui FieldScene2 / --ui LoginScene
+            if (i + 1 < argc && argv[i + 1][0] != '-')
+                snprintf(uiSceneName, sizeof uiSceneName, "%s", argv[++i]);
+        }
     }
 
     if (!SDL_Init(SDL_INIT_VIDEO)) {
@@ -238,6 +252,8 @@ int main(int argc, char** argv) {
     }
 
     SDL_GL_SetSwapInterval(1);
+    if (uiDemo)
+        SDL_StartTextInput(window);
 
     tmx::GLRenderDevice device;
     if (!device.Init(window)) {
@@ -315,6 +331,69 @@ int main(int argc, char** argv) {
     }
     bool follow = followCam >= 0 ? (followCam != 0) : (myChar != nullptr);
     float followDist = 6.0f;
+
+    // --- Phase 6: UI system (doc 20) ---
+    tmx::UIRenderer uiRenderer;
+    tmx::GLFont uiFont;
+    tmx::RenderGeomControl uiDispatch;
+    tmx::SControlContainer uiContainer;
+    bool uiFontReady = false;
+    bool uiSceneLoaded = false;
+    {
+        std::string uiErr;
+        if (!uiRenderer.Init(device.WhiteTexture(), &uiErr)) {
+            tmx::Log("UIRenderer init falhou: %s", uiErr.c_str());
+        } else {
+            const char* fontPaths[] = {
+                "/System/Library/Fonts/Helvetica.ttc",
+                "/System/Library/Fonts/SFNSMono.ttf",
+                "/System/Library/Fonts/Supplemental/Arial.ttf",
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+                "Tahoma.ttf",
+            };
+            for (auto path : fontPaths) {
+                if (uiFont.Init(path, 16.0f, &uiErr)) {
+                    uiFontReady = true;
+                    tmx::Log("font ok: %s", path);
+                    break;
+                }
+            }
+            if (!uiFontReady)
+                tmx::Log("nenhum font encontrado — UI sem texto");
+        }
+
+        // UI texture pipeline: list (512 entries) + texture sets (600).
+        {
+            std::vector<uint8_t> uiTexList;
+            if (ReadWholeFile("UI\\UITextureListN.bin", uiTexList))
+                textures.LoadUITextureList(uiTexList.data(), uiTexList.size());
+            std::string uiSetList;
+            if (ReadWholeFileText("UI\\UITextureSetList.txt", uiSetList))
+                textures.LoadUITextureSetList(uiSetList.data(), uiSetList.size());
+            std::string uiStrings;
+            if (ReadWholeFileText("UI\\UIString.txt", uiStrings))
+                tmx::UILoader::LoadUIStrings(uiStrings.data(), uiStrings.size());
+        }
+
+        if (uiFontReady)
+            uiDispatch.Init(&device, &textures, &uiRenderer, &uiFont, &uiErr);
+
+        // --ui [name]: load a real UI scene .bin (default FieldScene2).
+        if (uiDemo) {
+            char binPath[64];
+            snprintf(binPath, sizeof binPath, "UI\\%s.bin",
+                     uiSceneName[0] ? uiSceneName : "FieldScene2");
+            std::vector<uint8_t> binData;
+            if (ReadWholeFile(binPath, binData)) {
+                uiSceneLoaded = tmx::UILoader::ReadRCBin(
+                    binData.data(), binData.size(), uiContainer, &uiErr);
+                tmx::Log("UI %s: %s", binPath,
+                         uiSceneLoaded ? "carregada" : uiErr.c_str());
+            } else {
+                tmx::Log("UI bin nao encontrado: %s", binPath);
+            }
+        }
+    }
 
     // Sky dome + weather (phase 2 D4). Default weather = day-of-month % 4 like the
     // original select-server scene (TMSelectServerScene.cpp:323-325).
@@ -482,6 +561,14 @@ int main(int argc, char** argv) {
                     running = false;
                 else if (e.key.key == SDLK_F12)
                     SaveScreenshot(window, "screenshot.bmp");
+                else if (uiDemo && (e.key.key == SDLK_BACKSPACE ||
+                                    e.key.key == SDLK_RETURN ||
+                                    e.key.key == SDLK_TAB)) {
+                    // Route control keys to the focused editable control.
+                    char c = (e.key.key == SDLK_BACKSPACE) ? 8 :
+                             (e.key.key == SDLK_RETURN) ? '\r' : '\t';
+                    uiContainer.OnCharEvent(c);
+                }
                 else if (e.key.key == SDLK_F) {
                     if (myChar) {
                         follow = !follow;
@@ -537,12 +624,18 @@ int main(int argc, char** argv) {
                 break;
             case SDL_EVENT_MOUSE_BUTTON_DOWN:
                 if (e.button.button == SDL_BUTTON_LEFT) {
+                    if (uiDemo && uiContainer.OnMouseEvent(tmx::WM_LBUTTONDOWN, 1,
+                                                           (int)e.button.x, (int)e.button.y))
+                        break;  // UI consumed the click
                     mouseLook = true;
                     SDL_SetWindowRelativeMouseMode(window, true);
                 }
                 break;
             case SDL_EVENT_MOUSE_BUTTON_UP:
                 if (e.button.button == SDL_BUTTON_LEFT) {
+                    if (uiDemo)
+                        uiContainer.OnMouseEvent(tmx::WM_LBUTTONUP, 0,
+                                                 (int)e.button.x, (int)e.button.y);
                     mouseLook = false;
                     SDL_SetWindowRelativeMouseMode(window, false);
                 } else if (e.button.button == SDL_BUTTON_RIGHT && view.HasTerrain()) {
@@ -583,11 +676,22 @@ int main(int argc, char** argv) {
                     break;
                 mousePx = e.motion.x;
                 mousePy = e.motion.y;
+                if (uiDemo) {
+                    unsigned int wp = (e.motion.state & SDL_BUTTON_LMASK) ? 1u : 0u;
+                    uiContainer.OnMouseEvent(tmx::WM_MOUSEMOVE, wp,
+                                             (int)e.motion.x, (int)e.motion.y);
+                }
                 if (mouseLook) {
                     camYaw   += e.motion.xrel * 0.003f;
                     camPitch -= e.motion.yrel * 0.003f;
                     if (camPitch >  1.5f) camPitch =  1.5f;
                     if (camPitch < -1.5f) camPitch = -1.5f;
+                }
+                break;
+            case SDL_EVENT_TEXT_INPUT:
+                if (uiDemo) {
+                    for (const char* p = e.text.text; *p; ++p)
+                        uiContainer.OnCharEvent(*p);
                 }
                 break;
             case SDL_EVENT_MOUSE_WHEEL:
@@ -802,6 +906,21 @@ int main(int argc, char** argv) {
             device.DrawMesh(fallbackMesh);
         }
 
+        // Phase 6: render UI — real SControl tree through RenderGeomControl.
+        if (uiDemo && uiFontReady) {
+            int pw = 0, ph = 0;
+            SDL_GetWindowSizeInPixels(window, &pw, &ph);
+            tmx::SControl::s_screenW = (float)pw;
+            tmx::SControl::s_screenH = (float)ph;
+            tmx::SControl::s_widthRatio = (float)pw / 800.0f;
+            tmx::SControl::s_heightRatio = (float)ph / 600.0f;
+
+            uiContainer.FrameMove(SDL_GetTicks());
+            uiRenderer.Begin();
+            uiDispatch.RenderAll(uiContainer.m_pDrawControl);
+            uiRenderer.Flush(device, textures, pw, ph);
+        }
+
         device.EndFrame();
 
         if (shotPath && --shotFrames <= 0) {
@@ -815,6 +934,8 @@ int main(int argc, char** argv) {
     view.Destroy();
     fallbackMesh.Destroy();
     textures.DestroyAll();
+    uiFont.Shutdown();
+    uiRenderer.Destroy();
     device.Shutdown();
     tmx::LogShutdown();
     SDL_GL_DestroyContext(ctx);
