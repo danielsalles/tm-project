@@ -7,14 +7,14 @@
 
 namespace {
 
-// Synthetic EnvTextureList3.bin: 528-byte records (A = 264B stTextureListInfo,
-// B = 264B residue), matching this client build's real layout (doc 16 §2.2).
+// Synthetic EnvTextureList3.bin: 528-byte records, v769.2 layout
+// (szFileName[255] + szFilePart[255] + cAlpha@510 + 4x u32, phase 8c).
 class EnvListBuilder {
 public:
     EnvListBuilder& Entry(const char* path, char alpha) {
         std::vector<uint8_t> rec(528, 0);
         memcpy(rec.data(), path, strlen(path));
-        rec[255] = (uint8_t)alpha;
+        rec[510] = (uint8_t)alpha;
         // B half: short-name residue — content irrelevant to the loader
         m_buf.insert(m_buf.end(), rec.begin(), rec.end());
         return *this;

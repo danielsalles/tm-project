@@ -42,6 +42,8 @@ public:
     uint32_t m_dwControlID = 0;
     uint32_t m_dwUniqueID = 0;
 
+    int IsFocused() const { return m_bFocused; }
+
     // Position/size relative to parent (virtual 800x600 space scaled by ratio)
     float m_nPosX = 0, m_nPosY = 0;
     float m_nWidth = 0, m_nHeight = 0;

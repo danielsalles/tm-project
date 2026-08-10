@@ -42,6 +42,7 @@ add_library(tmcore STATIC
   src/math/TMMath.cpp
   src/net/CPSock.cpp
   src/net/HttpClient.cpp
+  src/net/ServerListBin.cpp
   src/platform/GameConfig.cpp
   src/audio/AudioEngine.cpp
   src/audio/miniaudio_impl.cpp)
@@ -114,6 +115,9 @@ add_library(tmgl STATIC
   src/ui/UILoader.cpp
   src/ui/TMFont3.cpp
   src/ui/RenderGeomControl.cpp
+  src/ui/pane/GuiMat.cpp
+  src/ui/pane/PaneFile.cpp
+  src/ui/pane/PaneView.cpp
   src/world/TerrainData.cpp
   src/world/TerrainRenderer.cpp
   src/world/SkyDome.cpp
@@ -137,6 +141,7 @@ add_library(tmgl STATIC
   src/world/SwingTrail.cpp
   src/scene/ObjectFile.cpp
   src/scene/SelectServerView.cpp
+  src/scene/SelectServerScene.cpp
   src/scene/FieldView.cpp)
 target_include_directories(tmgl PUBLIC src src/ui ${CMAKE_BINARY_DIR}/generated)
 target_link_libraries(tmgl PUBLIC tmcore glad stb)

@@ -11,6 +11,7 @@ SPanel::SPanel() {
     m_eCtrlType = CTRL_TYPE_PANEL;
     memset(&m_GCPanel, 0, sizeof(m_GCPanel));
     m_GCPanel.eRenderType = RENDER_IMAGE_STRETCH;
+    m_GCPanel.strColor = 0xFFFFFFFF; // labels stay white (SControl.cpp:1412)
 }
 
 SPanel::SPanel(int textureSetIndex, float x, float y, float w, float h,
@@ -102,8 +103,15 @@ SButton::SButton(int textureSetIndex, float x, float y, float w, float h,
     m_eCtrlType = CTRL_TYPE_BUTTON;
     m_bSound = sound;
     if (text) {
+        // BASE_UnderBarToSpace (SControl.cpp:1397-1402): '_' → ' ';
+        // a single-space label means "no text".
         strncpy(m_GCPanel.strString, text, 255);
         m_GCPanel.strString[255] = '\0';
+        for (char* p = m_GCPanel.strString; *p; ++p) {
+            if (*p == '_') *p = ' ';
+        }
+        if (!strcmp(m_GCPanel.strString, " "))
+            m_GCPanel.strString[0] = '\0';
     }
 }
 
@@ -179,6 +187,13 @@ void SText::SetText(const char* text) {
     if (text) {
         strncpy(m_szString, text, 255);
         m_szString[255] = '\0';
+        // BASE_UnderBarToSpace (SControl.cpp:604-607): '_' → ' ';
+        // a single-space label means "no text".
+        for (char* p = m_szString; *p; ++p) {
+            if (*p == '_') *p = ' ';
+        }
+        if (!strcmp(m_szString, " "))
+            m_szString[0] = '\0';
     } else {
         m_szString[0] = '\0';
     }
@@ -212,6 +227,7 @@ void SText::FrameMove2(stGeomList* pDrawList, IVector2 parentPos,
         m_GCBorder.nWidth = m_nWidth;
         m_GCBorder.nHeight = m_nHeight;
         m_GCBorder.dwColor = m_dwBorderColor;
+        m_GCBorder.strColor = m_dwBorderColor;
         m_GCBorder.eRenderType = RENDER_SHADOW;
         strncpy(m_GCBorder.strString, m_szString, 255);
         m_GCBorder.strString[255] = '\0';
@@ -223,6 +239,7 @@ void SText::FrameMove2(stGeomList* pDrawList, IVector2 parentPos,
     m_GCText.nWidth = m_nWidth;
     m_GCText.nHeight = m_nHeight;
     m_GCText.dwColor = m_dwColor;
+    m_GCText.strColor = m_dwColor;
     strncpy(m_GCText.strString, m_szString, 255);
     m_GCText.strString[255] = '\0';
     AddRenderControlItem(pDrawList, &m_GCText, layer);
@@ -287,6 +304,7 @@ void SEditableText::FrameMove2(stGeomList* pDrawList, IVector2 parentPos,
         m_GCComposition.nWidth = compW;
         m_GCComposition.nHeight = m_nHeight;
         m_GCComposition.dwColor = 0xFFFFFF66; // highlight (OS IME style)
+        m_GCComposition.strColor = 0xFFFFFF66;
         strncpy(m_GCComposition.strString, m_szComposition, 255);
         m_GCComposition.strString[255] = '\0';
         AddRenderControlItem(pDrawList, &m_GCComposition, layer);
@@ -315,6 +333,26 @@ void SEditableText::SetComposition(const char* text) {
 int SEditableText::OnKeyDownEvent(int key) {
     (void)key;
     return 0;
+}
+
+// SControl.cpp:1066-1081 — click inside the box grabs focus; the container
+// turns that into SetFocusedControl (SControlContainer.cpp:64-66).
+int SEditableText::OnMouseEvent(unsigned int dwFlags, unsigned int wParam,
+                                int nX, int nY) {
+    if (!m_bSelectEnable)
+        return 0;
+
+    int bOver = PointInRect((float)nX, (float)nY, m_nPosX, m_nPosY,
+                            m_nWidth, m_nHeight);
+
+    if (dwFlags != WM_LBUTTONDOWN)
+        return SControl::OnMouseEvent(dwFlags, wParam, nX, nY);
+
+    if (!bOver)
+        return 0;
+
+    m_bFocused = 1;
+    return 1;
 }
 
 int SEditableText::OnCharEvent(char c) {

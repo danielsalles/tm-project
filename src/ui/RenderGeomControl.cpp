@@ -28,9 +28,10 @@ void RenderGeomControl::Render(GeomControl* ctrl) {
     switch (ctrl->eRenderType) {
         case RENDER_TEXT:
         case RENDER_SHADOW:
-            // Text rendering via GLFont
+            // Text rendering via GLFont — strColor, not dwColor (buttons tint
+            // the image rect but keep white labels, SControl.cpp:1412).
             if (m_font && ctrl->strString[0]) {
-                m_font->SetText(ctrl->strString, ctrl->dwColor);
+                m_font->SetText(ctrl->strString, ctrl->strColor);
                 m_font->Render(m_ui->Batch(), ctrl->nPosX, ctrl->nPosY,
                                ctrl->eRenderType == RENDER_SHADOW ? 1 : 0,
                                ctrl->nLayer);
@@ -44,7 +45,7 @@ void RenderGeomControl::Render(GeomControl* ctrl) {
             RenderGeomRectImage(ctrl);
             // If there's text overlay, render it centered
             if (ctrl->strString[0] && m_font) {
-                m_font->SetText(ctrl->strString, ctrl->dwColor);
+                m_font->SetText(ctrl->strString, ctrl->strColor);
                 float textX = ctrl->nPosX + ctrl->nWidth * 0.5f - m_font->GetLastWidth() * 0.5f;
                 float textY = ctrl->nPosY + ctrl->nHeight * 0.5f - m_font->GetLastHeight() * 0.5f;
                 m_font->Render(m_ui->Batch(), textX, textY, 0, ctrl->nLayer);
@@ -80,15 +81,19 @@ void RenderGeomControl::Render(GeomControl* ctrl) {
 void RenderGeomControl::RenderGeomRectImage(GeomControl* ctrl) {
     if (!ctrl || !m_tex || !m_ui) return;
 
-    // Solid color rectangle (nTextureSetIndex == -1)
-    if (ctrl->nTextureSetIndex == -1) {
+    // Texture set resolution (RenderDevice.cpp:2833,3129-3160,3236-3244):
+    //   n >= 0  → GetUITextureSet(n)
+    //   n == -1 → solid color rect (bTrans=0)
+    //   n == -2 → blended color rect (bTrans=1); text-only controls tint ~invisible
+    //   n < -2  → GetUITextureSet(-n)  (login/logo panels use this)
+    if (ctrl->nTextureSetIndex == -1 || ctrl->nTextureSetIndex == -2) {
         m_ui->RenderRectNoTex(ctrl->nPosX, ctrl->nPosY, ctrl->nWidth, ctrl->nHeight,
-                              ctrl->dwColor, true);
+                              ctrl->dwColor, ctrl->nTextureSetIndex == -2);
         return;
     }
 
-    // Get the ControlTextureSet for this control
-    auto* uiSet = m_tex->GetUITextureSet(ctrl->nTextureSetIndex);
+    const int setIndex = ResolveTextureSetIndex(ctrl->nTextureSetIndex);
+    auto* uiSet = m_tex->GetUITextureSet(setIndex);
     if (!uiSet || ctrl->nTextureIndex < 0 ||
         ctrl->nTextureIndex >= (int)uiSet->coords.size()) {
         // Set/index missing — draw nothing (the original would render garbage;

@@ -3,16 +3,20 @@
 #include <SDL3/SDL.h>
 #include <glad/gl.h>
 #include <stb_image_write.h>
+#include <stb_image.h>
 
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <unordered_map>
 #include <vector>
 
 #include "platform/Platform.h"
 #include "platform/GameConfig.h"
 #include "audio/AudioEngine.h"
 #include "net/HttpClient.h"
+#include "net/ServerListBin.h"
+#include "net/ServerRules.h"
 #include "gl/GLRenderDevice.h"
 #include "gl/GLMesh.h"
 #include "gl/GLTexture.h"
@@ -25,6 +29,11 @@
 #include "ui/RenderGeomControl.h"
 #include "scene/FieldView.h"
 #include "scene/CameraGestures.h"
+#include "scene/SelectServerScene.h"
+#include "pane/PaneCrypto.h"
+#include "pane/GuiMat.h"
+#include "pane/PaneFile.h"
+#include "pane/PaneView.h"
 #include "world/SkyDome.h"
 #include "world/SunFlare.h"
 #include "world/TerrainData.h"
@@ -87,6 +96,64 @@ static bool ReadWholeFileText(const char* relPath, std::string& out) {
     return true;
 }
 
+// --- Phase 8d: pane texture resolver ---------------------------------------
+// guimat paths ("NUI/ServerList.wyt") and ExternalImageFile ("ui/CI.png").
+// .wyt = WT10+TGA via GLTexture; anything else (png/tga/bmp) via stb_image.
+static std::unordered_map<std::string, std::tuple<GLuint, int, int>> s_paneTexCache;
+
+static bool PaneResolveTexture(const std::string& path, uint32_t& tex, int& w, int& h) {
+    auto it = s_paneTexCache.find(path);
+    if (it != s_paneTexCache.end()) {
+        tex = std::get<0>(it->second);
+        w = std::get<1>(it->second);
+        h = std::get<2>(it->second);
+        return tex != 0;
+    }
+
+    GLuint gl = 0;
+    int tw = 0, th = 0;
+    std::vector<uint8_t> bytes;
+    if (ReadWholeFile(path.c_str(), bytes) && bytes.size() > 4) {
+        if (!memcmp(bytes.data(), "WT10", 4)) {
+            gl = tmx::LoadTextureWYT(bytes.data(), bytes.size());
+            if (gl) {
+                glBindTexture(GL_TEXTURE_2D, gl);
+                glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &tw);
+                glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &th);
+            }
+        } else {
+            // .wyp = pane-delta cipher over a plain PNG (validated on
+            // UI/Image/NewUI_Guimat.wyp → 89 50 4E 47). Plain PNGs (ui/CI.png)
+            // pass through untouched.
+            std::vector<uint8_t> dec;
+            const uint8_t* img = bytes.data();
+            size_t imgSize = bytes.size();
+            if (memcmp(bytes.data(), "\x89PNG", 4) != 0) {
+                dec = tmx::PaneDecrypt(bytes.data(), bytes.size());
+                if (dec.size() > 4 && !memcmp(dec.data(), "\x89PNG", 4)) {
+                    img = dec.data();
+                    imgSize = dec.size();
+                }
+            }
+            int comp = 0;
+            stbi_uc* px = stbi_load_from_memory(img, (int)imgSize, &tw, &th, &comp, 4);
+            if (px) {
+                glGenTextures(1, &gl);
+                glBindTexture(GL_TEXTURE_2D, gl);
+                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, tw, th, 0,
+                             GL_RGBA, GL_UNSIGNED_BYTE, px);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
+                stbi_image_free(px);
+            }
+        }
+    }
+    s_paneTexCache[path] = std::make_tuple(gl, tw, th);
+    tex = gl; w = tw; h = th;
+    return gl != 0;
+}
+
 static void SaveScreenshot(SDL_Window* window, const char* path) {
     int w = 0, h = 0;
     SDL_GetWindowSizeInPixels(window, &w, &h);
@@ -132,6 +199,8 @@ int main(int argc, char** argv) {
     // --follow/--nofollow: follow camera (default on when a character exists)
     const char* shotPath = nullptr;
     int shotFrames = 30;
+    int uiClickX = -1, uiClickY = -1;  // --uiclick: synthetic UI click before shot
+    char paneName[64] = "";            // --pane <name|login>
     char mapName[32] = "Field2723";
     int weather = -1;   // -1 = like the original select-server: day-of-month % 4
     float startPitch = -0.7f, startYaw = 0.0f;
@@ -168,11 +237,18 @@ int main(int argc, char** argv) {
     bool optNoMusic = false;
     bool optFullscreen = false;
     char guildMarkUrl[256] = "";
+    char servStatusUrl[256] = "";   // --servurl: override server status URL
     for (int i = 1; i < argc; ++i) {
         if (!strcmp(argv[i], "--shot") && i + 1 < argc)
             shotPath = argv[++i];
         else if (!strcmp(argv[i], "--frames") && i + 1 < argc)
             shotFrames = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--uiclick") && i + 2 < argc) {
+            uiClickX = atoi(argv[++i]);
+            uiClickY = atoi(argv[++i]);
+        }
+        else if (!strcmp(argv[i], "--pane") && i + 1 < argc)
+            snprintf(paneName, sizeof paneName, "%s", argv[++i]);
         else if (!strcmp(argv[i], "--map") && i + 1 < argc) {
             snprintf(mapName, sizeof mapName, "%s", argv[++i]);
         }
@@ -263,6 +339,8 @@ int main(int argc, char** argv) {
             optFullscreen = true;
         else if (!strcmp(argv[i], "--guildurl") && i + 1 < argc)
             snprintf(guildMarkUrl, sizeof guildMarkUrl, "%s", argv[++i]);
+        else if (!strcmp(argv[i], "--servurl") && i + 1 < argc)
+            snprintf(servStatusUrl, sizeof servStatusUrl, "%s", argv[++i]);
     }
 
     // Config.bin (phase 7 §5): boot settings, CLI flags override.
@@ -332,6 +410,12 @@ int main(int argc, char** argv) {
         int pw = 0, ph = 0;
         SDL_GetWindowSizeInPixels(window, &pw, &ph);
         glViewport(0, 0, pw, ph);
+
+        // Publish the real UI coordinate space BEFORE any scene load, so
+        // SetCenterPos/layout math never runs against the 800x600 static
+        // default (root cause of the misplaced menus).
+        tmx::SControl::s_screenW = (float)pw;
+        tmx::SControl::s_screenH = (float)ph;
     }
 
     SDL_GL_SetSwapInterval(1);
@@ -443,6 +527,20 @@ int main(int argc, char** argv) {
     tmx::GLFont uiFont;
     tmx::RenderGeomControl uiDispatch;
     tmx::SControlContainer uiContainer;
+    tmx::SelectServerScene selServerScene;  // Phase 8b: login screen logic
+    bool selServerActive = false;
+    // Phase 8d: .pane UI state
+    tmx::GuiMat paneMat;
+    bool paneMatOk = false;
+    std::vector<std::unique_ptr<tmx::PaneView>> panes;
+    tmx::PaneView* paneServerSel = nullptr;  // GameLogin
+    tmx::PaneView* paneLoginBox = nullptr;   // GameLogin2
+    bool paneLoginFlow = false;
+    // Phase 8c: decoded server list state
+    std::vector<tmx::ServerGroup> serverGroups;
+    std::vector<std::string> serverNames;
+    std::vector<int> serverCounts;
+    std::vector<int> groupIdxOfRow;  // ListView row → serverGroups index
     bool uiFontReady = false;
     bool uiSceneLoaded = false;
     {
@@ -458,7 +556,9 @@ int main(int argc, char** argv) {
                 "Tahoma.ttf",
             };
             for (auto path : fontPaths) {
-                if (uiFont.Init(path, 16.0f, &uiErr)) {
+                // RenderDevice::m_nFontSize = 12 (RenderDevice.cpp:23) — the
+                // original UI font is 12px at any resolution.
+                if (uiFont.Init(path, 12.0f, &uiErr)) {
                     uiFontReady = true;
                     tmx::Log("font ok: %s", path);
                     break;
@@ -495,8 +595,109 @@ int main(int argc, char** argv) {
                     binData.data(), binData.size(), uiContainer, &uiErr);
                 tmx::Log("UI %s: %s", binPath,
                          uiSceneLoaded ? "carregada" : uiErr.c_str());
+
+                // Phase 8b: wire the select-server scene logic (layout +
+                // visibility flow) when that's the loaded scene.
+                const char* sceneName = uiSceneName[0] ? uiSceneName : "FieldScene2";
+                if (uiSceneLoaded && !strcmp(sceneName, "SelServerScene2")) {
+                    selServerActive = selServerScene.Init(&uiContainer);
+                    if (selServerActive) {
+                        uiContainer.SetSceneListener(&selServerScene);
+                        int pw = 0, ph = 0;
+                        SDL_GetWindowSizeInPixels(window, &pw, &ph);
+                        selServerScene.Layout(pw, ph);
+                        selServerScene.ApplyBootState();
+                        tmx::Log("SelServerScene: layout aplicado (%dx%d)", pw, ph);
+                    }
+                }
             } else {
                 tmx::Log("UI bin nao encontrado: %s", binPath);
+            }
+        }
+
+        // --- Phase 8d: .pane UI (current client's panel system) ---
+        // --pane login  → GameLogin (server select) + GameLogin2 (login box,
+        //                  hidden) + GameLogin3 (copyright bar)
+        // --pane <Name> → single pane from ui/Panel/login/<Name>.pane
+        if (paneName[0] && uiFontReady) {
+            std::vector<uint8_t> gmBytes;
+            if (ReadWholeFile("ui\\Default.guimat", gmBytes) && !gmBytes.empty()) {
+                paneMatOk = paneMat.Parse(tmx::Utf16LeToUtf8(gmBytes.data(), gmBytes.size()));
+                tmx::Log("guimat: %zu texturas, %zu aliases",
+                         paneMat.TextureCount(), paneMat.AliasCount());
+            }
+
+            auto loadPane = [&](const char* name) -> tmx::PaneView* {
+                char path[160];
+                snprintf(path, sizeof path, "ui\\Panel\\login\\%s.pane", name);
+                std::vector<uint8_t> enc;
+                if (!ReadWholeFile(path, enc)) {
+                    tmx::Log("pane nao encontrado: %s", path);
+                    return nullptr;
+                }
+                tmx::PaneFile pf;
+                if (!tmx::ParsePaneText(tmx::PaneDecryptToUtf8(enc.data(), enc.size()), pf)) {
+                    tmx::Log("pane invalido: %s", path);
+                    return nullptr;
+                }
+                auto v = std::make_unique<tmx::PaneView>();
+                v->Load(std::move(pf), paneMatOk ? &paneMat : nullptr);
+                v->SetTextureResolver(PaneResolveTexture);
+                int pw = 0, ph = 0;
+                SDL_GetWindowSizeInPixels(window, &pw, &ph);
+                v->Layout(pw, ph);
+                panes.push_back(std::move(v));
+                tmx::Log("pane %s: carregado", name);
+                return panes.back().get();
+            };
+
+            if (!strcmp(paneName, "login")) {
+                paneLoginFlow = true;
+                paneServerSel = loadPane("GameLogin");
+                paneLoginBox = loadPane("GameLogin2");
+                loadPane("GameLogin3");  // copyright bar
+                if (paneLoginBox)
+                    paneLoginBox->SetVisible(false);
+
+                // Header alignment: the pane rects + underscore padding put
+                // "Servidor"/"Canal" off-center even in the official exe.
+                // Re-center on the ServerBG bar centers (77.5/237, y 16) —
+                // holds at any resolution (art and text share panel space).
+                if (paneServerSel) {
+                    paneServerSel->AdjustRectByCaptionId("uu_03", 37, 6, 81, 20);
+                    paneServerSel->AdjustRectByCaptionId("uu_04", 192, 6, 90, 20);
+                }
+
+                // Phase 8c: real server list (serverlist.bin + sn.bin) into
+                // the pane ListViews (TMSelectServerScene::InitializeUI).
+                std::vector<uint8_t> slBytes;
+                if (ReadWholeFile("serverlist.bin", slBytes))
+                    tmx::DecodeServerListBin(slBytes.data(), slBytes.size(), serverGroups);
+                std::vector<uint8_t> snBytes;
+                if (ReadWholeFile("sn.bin", snBytes))
+                    tmx::DecodeServerNamesBin(snBytes.data(), snBytes.size(),
+                                              serverNames, serverCounts);
+                tmx::Log("serverlist: %zu grupos decodificados", serverGroups.size());
+
+                if (paneServerSel && !serverGroups.empty()) {
+                    std::vector<std::string> groupItems;
+                    for (size_t g = 0; g < serverGroups.size(); ++g) {
+                        if (serverGroups[g].channelIPs.empty())
+                            continue;
+                        // sn.bin names index by the serverlist group index
+                        // (names[1] = "Global" ↔ group 1).
+                        std::string name = (g < serverNames.size() && !serverNames[g].empty())
+                            ? serverNames[g]
+                            : ("Server " + std::to_string(g + 1));
+                        groupIdxOfRow.push_back((int)g);
+                        groupItems.push_back(std::move(name));
+                    }
+                    paneServerSel->SetListItems("ServerListView", groupItems);
+                    paneServerSel->SetVisibleByName("ServerListView", true);
+                    paneServerSel->SetVisibleByName("ServerListView2", true);
+                }
+            } else {
+                loadPane(paneName);
             }
         }
     }
@@ -516,6 +717,111 @@ int main(int argc, char** argv) {
     std::vector<uint8_t> guildMarkBuf;
     std::atomic<bool> guildMarkReady{false};
     std::thread guildThread;
+
+    // Phase 8c: channel list + online user counts from the status URL
+    // (BASE_GetHttpRequest into g_pServerList[i][0], TMSelectServerScene.cpp:214).
+    std::vector<int> userCounts;
+    int weekFlag = -1, weekDay = -1;  // status fields 11/12 (crown, server rule)
+    std::atomic<bool> userCountsReady{false};
+    std::thread userCountThread;
+    auto fillChannels = [&]() {
+        if (!paneServerSel || groupIdxOfRow.empty())
+            return;
+        int row = paneServerSel->GetListSelection("ServerListView");
+        if (row < 0 || row >= (int)groupIdxOfRow.size())
+            return;
+        const auto& grp = serverGroups[groupIdxOfRow[row]];
+        const int g = groupIdxOfRow[row];
+        const std::string& gname = (g < (int)serverNames.size() && !serverNames[g].empty())
+            ? serverNames[g] : ("Server " + std::to_string(g + 1));
+        // Crown/recommended day math uses LOCAL time (the client's
+        // _localtime32), not UTC days — otherwise the week flips early.
+        time_t nowT = time(nullptr);
+        struct tm lt;
+        localtime_r(&nowT, &lt);
+        struct tm midnight = lt;
+        midnight.tm_hour = midnight.tm_min = midnight.tm_sec = 0;
+        const int64_t today = (int64_t)(mktime(&midnight) / 86400);
+        const int nCh = (int)grp.channelIPs.size();
+        // Recommended (green) channel: day-of-month % n, 1-based, 0→n
+        // (WYD 769.2.c:212586-212598). The feed's 12th field overrides the
+        // local day when present (WYD 769.2.c:213250-213253).
+        int day = -1;
+        if (weekDay != -1) {
+            day = weekDay;
+        } else {
+            day = lt.tm_mday;
+        }
+        int recommended = nCh > 0 ? day % nCh : -1;
+        if (recommended == 0) recommended = nCh;
+
+        std::vector<std::string> items;
+        std::vector<int> values;
+        std::vector<uint32_t> flags;
+        for (int i = 0; i < nCh; ++i) {
+            const int count = i < (int)userCounts.size() ? userCounts[i] : -1;
+            // "%s-%d" group name + 1-based index (WYD 769.2.c:212899).
+            std::string label = gname + "-" + std::to_string(i + 1);
+            if (count < 0) {
+                // No status data: empty label + hidden gauge (WYD 769.2.c:212953).
+                items.push_back("");
+                values.push_back(-1);
+                flags.push_back(0);
+                continue;
+            }
+            items.push_back(std::move(label));
+            values.push_back(tmx::ServerRules::GaugeFillFromCount(count));
+
+            uint32_t f = 0;
+            // FULL: count > 900 (WYD 769.2.c:212902) — rendered centered over
+            // the gauge (our style), not appended to the name.
+            if (count > tmx::ServerRules::kFullLabelThreshold) f |= 4;
+            // Crown: server-driven when weekFlag==1, else local Sunday rule
+            // (WYD 769.2.c:212867-212870).
+            const bool crown = (weekFlag == 1)
+                ? tmx::ServerRules::CrownChannelServerRule(i + 1, weekDay)
+                : tmx::ServerRules::CrownChannelLocal(i + 1, today);
+            if (crown) f |= 1;
+            if (i + 1 == recommended) f |= 2;  // 1-based compare (212966)
+            flags.push_back(f);
+        }
+        paneServerSel->SetListItems("ServerListView2", items);
+        paneServerSel->SetListItemValues("ServerListView2", values);
+        paneServerSel->SetListItemFlags("ServerListView2", flags);
+    };
+    if (paneLoginFlow && !serverGroups.empty()) {
+        std::string url;
+        for (auto& g : serverGroups)
+            if (!g.statusUrl.empty()) { url = g.statusUrl; break; }
+        if (servStatusUrl[0])  // --servurl override (testing/private servers)
+            url = servStatusUrl;
+        fillChannels();
+        if (!url.empty()) {
+            userCountThread = std::thread([url, &userCounts, &userCountsReady,
+                                           &weekFlag, &weekDay]() {
+                char buf[1024];
+                if (tmx::HttpGet(url.c_str(), buf, sizeof buf) > 0) {
+                    std::vector<int> counts;
+                    const char* p = buf;
+                    while (*p && counts.size() < 16) {
+                        while (*p == '\n' || *p == '\r' || *p == ' ' || *p == '\t') ++p;
+                        if (!*p) break;
+                        char* end = nullptr;
+                        long v = strtol(p, &end, 10);
+                        if (end == p) break;
+                        counts.push_back((int)v);
+                        p = end;
+                    }
+                    userCounts = std::move(counts);
+                    // Fields 11/12 drive the server-side crown rule
+                    // (WYD 769.2.c:212867-212868).
+                    if (userCounts.size() > 10) weekFlag = userCounts[10];
+                    if (userCounts.size() > 11) weekDay = userCounts[11];
+                    userCountsReady = true;
+                }
+            });
+        }
+    }
     if (guildMarkUrl[0]) {
         guildThread = std::thread([&]() {
             char buf[1024];
@@ -682,6 +988,43 @@ int main(int argc, char** argv) {
     };
 
     bool running = true;
+    // Phase 8d: shared pane click (real mouse-up and --uiclick automation).
+    auto paneClick = [&](int x, int y) {
+        for (auto& p : panes) {
+            if (!p->IsVisible())
+                continue;
+            p->OnMouseDown(x, y);
+            p->OnMouseUp(x, y);
+            std::string click = p->LastClick();  // copy: ClearClick empties it
+            if (click.empty())
+                continue;
+            p->ClearClick();
+            if (click == "btnSelServer") {
+                // Full server: count >= 900 denies selection (4000ms toast in
+                // the client, WYD 769.2.c:340566). Count > 900 also carries
+                // the FULL label (see fillChannels).
+                bool blocked = false;
+                if (paneServerSel && userCountsReady) {
+                    const int ch = paneServerSel->GetListSelection("ServerListView2");
+                    if (ch >= 0 && ch < (int)userCounts.size() &&
+                        userCounts[ch] >= tmx::ServerRules::kFullBlockThreshold)
+                        blocked = true;
+                }
+                if (!blocked) {
+                    if (paneServerSel) paneServerSel->SetVisible(false);
+                    if (paneLoginBox) paneLoginBox->SetVisible(true);
+                } else {
+                    tmx::Log("canal cheio (>=900) — seleção negada");
+                }
+            } else if (click == "btnLogout") {
+                if (paneLoginBox) paneLoginBox->SetVisible(false);
+                if (paneServerSel) paneServerSel->SetVisible(true);
+            } else if (click == "btnExit") {
+                running = false;
+            }
+            // btnLogin/btnNew: inert (network = phase 8c+)
+        }
+    };
     bool mouseLook = false;
     float mousePx = hoverPx, mousePy = hoverPy;
     // Phase 7 camera gestures (EventTranslator.cpp:193-461): middle-button or
@@ -706,10 +1049,29 @@ int main(int argc, char** argv) {
                 else if (uiDemo && (e.key.key == SDLK_BACKSPACE ||
                                     e.key.key == SDLK_RETURN ||
                                     e.key.key == SDLK_TAB)) {
+                    // Scene-level control keys first (Phase 8b): TAB toggles
+                    // ID/PW focus, RETURN on PW fires Login OK
+                    // (TMSelectServerScene.cpp:785-806).
+                    const int vk = (e.key.key == SDLK_TAB) ? 9 :
+                                   (e.key.key == SDLK_RETURN) ? 13 : 8;
+                    if (selServerActive && vk != 8 &&
+                        selServerScene.OnKeyDown(vk))
+                        break;
                     // Route control keys to the focused editable control.
                     char c = (e.key.key == SDLK_BACKSPACE) ? 8 :
                              (e.key.key == SDLK_RETURN) ? '\r' : '\t';
                     uiContainer.OnCharEvent(c);
+                }
+                else if (!panes.empty() && (e.key.key == SDLK_BACKSPACE ||
+                                            e.key.key == SDLK_TAB)) {
+                    for (auto& p : panes) {
+                        if (!p->IsVisible())
+                            continue;
+                        if (e.key.key == SDLK_TAB)
+                            p->FocusNext();
+                        else
+                            p->Backspace();
+                    }
                 }
                 else if (uiDemo && (e.key.mod & (SDL_KMOD_CTRL | SDL_KMOD_GUI)) &&
                          (e.key.key == SDLK_V || e.key.key == SDLK_C || e.key.key == SDLK_X)) {
@@ -802,6 +1164,16 @@ int main(int argc, char** argv) {
                     }
                 }
                 if (e.button.button == SDL_BUTTON_LEFT) {
+                    // Phase 8d panes get first crack at the click (they're the
+                    // topmost UI when present).
+                    bool paneConsumed = false;
+                    for (auto& p : panes) {
+                        if (p->IsVisible() &&
+                            p->OnMouseDown((int)e.button.x, (int)e.button.y))
+                            paneConsumed = true;
+                    }
+                    if (paneConsumed)
+                        break;
                     if (uiDemo && uiContainer.OnMouseEvent(tmx::WM_LBUTTONDOWN, 1,
                                                            (int)e.button.x, (int)e.button.y))
                         break;  // UI consumed the click
@@ -816,6 +1188,7 @@ int main(int argc, char** argv) {
                     SDL_SetWindowRelativeMouseMode(window, false);
                 }
                 if (e.button.button == SDL_BUTTON_LEFT) {
+                    paneClick((int)e.button.x, (int)e.button.y);
                     if (uiDemo) {
                         if (uiContainer.OnMouseEvent(tmx::WM_LBUTTONUP, 0,
                                                      (int)e.button.x, (int)e.button.y))
@@ -876,6 +1249,8 @@ int main(int argc, char** argv) {
                     uiContainer.OnMouseEvent(tmx::WM_MOUSEMOVE, wp,
                                              (int)e.motion.x, (int)e.motion.y);
                 }
+                for (auto& p : panes)
+                    p->OnMouseMove((int)e.motion.x, (int)e.motion.y);
                 // Camera gestures (EventTranslator.cpp:251-330): middle-drag or
                 // Alt+right-drag rotate with the original constants; Alt alone
                 // turns the drag into a zoom (wheel = 3*dy).
@@ -904,6 +1279,11 @@ int main(int argc, char** argv) {
                 if (uiDemo) {
                     for (const char* p = e.text.text; *p; ++p)
                         uiContainer.OnCharEvent(*p);
+                }
+                for (auto& p : panes) {
+                    if (p->HasFocus())
+                        for (const char* c = e.text.text; *c; ++c)
+                            p->OnChar(*c);
                 }
                 break;
             case SDL_EVENT_MOUSE_WHEEL: {
@@ -1163,21 +1543,68 @@ int main(int argc, char** argv) {
         }
 
         // Phase 6: render UI — real SControl tree through RenderGeomControl.
-        if (uiDemo && uiFontReady) {
+        // Phase 8d: .pane views render through the same batcher.
+        if ((uiDemo || !panes.empty()) && uiFontReady) {
             int pw = 0, ph = 0;
             SDL_GetWindowSizeInPixels(window, &pw, &ph);
+            // Re-layout on resize (Phase 8b): scene positions derive from the
+            // real screen size (TMSelectServerScene.cpp:153-186).
+            const bool resized = pw != (int)tmx::SControl::s_screenW ||
+                                 ph != (int)tmx::SControl::s_screenH;
             tmx::SControl::s_screenW = (float)pw;
             tmx::SControl::s_screenH = (float)ph;
             tmx::SControl::s_widthRatio = (float)pw / 800.0f;
             tmx::SControl::s_heightRatio = (float)ph / 600.0f;
+            if (resized && selServerActive)
+                selServerScene.Layout(pw, ph);
+            if (resized)
+                for (auto& p : panes) p->Layout(pw, ph);
+            if (selServerActive && selServerScene.QuitRequested())
+                running = false;
 
-            uiContainer.FrameMove(SDL_GetTicks());
             uiRenderer.Begin();
-            uiDispatch.RenderAll(uiContainer.m_pDrawControl);
+            if (uiDemo) {
+                uiContainer.FrameMove(SDL_GetTicks());
+                uiDispatch.RenderAll(uiContainer.m_pDrawControl);
+            }
+            for (auto& p : panes)
+                p->Render(&uiRenderer, &uiFont);
             uiRenderer.Flush(device, textures, pw, ph);
         }
 
+        // Phase 8c: refresh the channel list when the group pick changes or
+        // the user counts arrive (single fill per change).
+        if (paneLoginFlow && paneServerSel) {
+            static int lastGroupRow = -2;
+            static bool countsApplied = false;
+            const int row = paneServerSel->GetListSelection("ServerListView");
+            if (row != lastGroupRow) {
+                lastGroupRow = row;
+                fillChannels();
+            }
+            if (userCountsReady && !countsApplied) {
+                countsApplied = true;
+                fillChannels();
+            }
+        }
+
         device.EndFrame();
+
+        // --uiclick x,y: inject a synthetic LMB down+up into the UI two frames
+        // before the screenshot, so a full FrameMove/render pass runs with the
+        // resulting UI state (UI automation for headless validation).
+        // --uiclick x,y: synthetic LMB down+up at frame 20 (needs --frames >20),
+        // leaving enough frames for FrameMove/render to settle before the shot
+        // (UI automation for headless validation).
+        if (shotPath && uiClickX >= 0 && shotFrames == 20) {
+            if (!panes.empty()) {
+                paneClick(uiClickX, uiClickY);
+            } else {
+                uiContainer.OnMouseEvent(tmx::WM_LBUTTONDOWN, 1, uiClickX, uiClickY);
+                uiContainer.OnMouseEvent(tmx::WM_LBUTTONUP, 0, uiClickX, uiClickY);
+            }
+            tmx::Log("uiclick @%d,%d", uiClickX, uiClickY);
+        }
 
         if (shotPath && --shotFrames <= 0) {
             SaveScreenshot(window, shotPath);
@@ -1188,6 +1615,8 @@ int main(int argc, char** argv) {
     tmx::Log("shutdown limpo");
     if (guildThread.joinable())
         guildThread.join();
+    if (userCountThread.joinable())
+        userCountThread.join();
     config.Save("Config.bin"); // phase 7: persist boot settings
     audio.Shutdown();
     sky.Destroy();

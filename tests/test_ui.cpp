@@ -6,8 +6,10 @@
 #include "ui/SControlContainer.h"
 #include "ui/UIBinary.h"
 #include "ui/UILoader.h"
+#include "ui/RenderGeomControl.h"
 
 #include <cstring>
+#include <vector>
 
 using namespace tmx;
 
@@ -301,4 +303,262 @@ TEST(ui, UILoader_UIString) {
     EXPECT_TRUE(strcmp(UILoader::UIString(1), "Hello") == 0);
     EXPECT_TRUE(strcmp(UILoader::UIString(2), "World") == 0);
     EXPECT_TRUE(strcmp(UILoader::UIString(999), "") == 0);  // out of range
+}
+
+TEST(ui, RenderGeomControl_negative_texture_set) {
+    // RenderDevice.cpp:2833,3129 — n < -2 resolves to set (-n); -1/-2 pass through.
+    EXPECT_TRUE(RenderGeomControl::ResolveTextureSetIndex(0) == 0);
+    EXPECT_TRUE(RenderGeomControl::ResolveTextureSetIndex(467) == 467);
+    EXPECT_TRUE(RenderGeomControl::ResolveTextureSetIndex(-1) == -1);
+    EXPECT_TRUE(RenderGeomControl::ResolveTextureSetIndex(-2) == -2);
+    EXPECT_TRUE(RenderGeomControl::ResolveTextureSetIndex(-467) == 467);
+    EXPECT_TRUE(RenderGeomControl::ResolveTextureSetIndex(-499) == 499);
+}
+
+TEST(ui, SButton_underscore_to_space) {
+    // BASE_UnderBarToSpace (SControl.cpp:1397-1402): "Novo_ID" → "Novo ID";
+    // a single-space label means no text.
+    SButton btn(-2, 0, 0, 50, 23, 0xFFFFFFFF, 1, "Novo_ID");
+    EXPECT_TRUE(strcmp(btn.m_GCPanel.strString, "Novo ID") == 0);
+    SButton blank(-2, 0, 0, 50, 23, 0xFFFFFFFF, 1, " ");
+    EXPECT_TRUE(blank.m_GCPanel.strString[0] == '\0');
+}
+
+// --- SelectServerScene (Phase 8b) ---
+#include "scene/SelectServerScene.h"
+
+namespace {
+// Build a minimal SelServerScene2 stream: [type][BinXxx] records with the
+// IDs the scene looks up (ResourceControl.h values).
+struct SceneBinBuilder {
+    std::vector<uint8_t> data;
+    template <typename T>
+    void add(int32_t type, const T& rec) {
+        const uint8_t* tp = (const uint8_t*)&type;
+        data.insert(data.end(), tp, tp + 4);
+        const uint8_t* rp = (const uint8_t*)&rec;
+        data.insert(data.end(), rp, rp + sizeof(T));
+    }
+    void panel(int id, int parent, int tex, int x, int y, int w, int h) {
+        BinPanel b{}; b.nID = id; b.nParentID = parent; b.nTextureSetIndex = tex;
+        b.nStartX = x; b.nStartY = y; b.nWidth = w; b.nHeight = h; b.nColor = -1;
+        add(1, b);
+    }
+    void button(int id, int parent, int x, int y) {
+        BinButton b{}; b.nID = id; b.nParentID = parent; b.nTextureSetIndex = -2;
+        b.nStartX = x; b.nStartY = y;
+        b.nWidth = 70; b.nHeight = 20; b.nColor = -1;
+        add(2, b);
+    }
+    void listbox(int id, int parent) {
+        BinListBox b{}; b.nID = id; b.nParentID = parent; b.nTextureSetIndex = -2;
+        add(6, b);
+    }
+    void text(int id, int parent, int x, int y, int w, int h) {
+        BinText b{}; b.nID = id; b.nParentID = parent; b.nTextureSetIndex = -1;
+        b.nStartX = x; b.nStartY = y; b.nWidth = w; b.nHeight = h;
+        add(12, b);
+    }
+    void edit(int id, int parent, int x, int y) {
+        BinEdit b{}; b.nID = id; b.nParentID = parent; b.nTextureSetIndex = -2;
+        b.nStartX = x; b.nStartY = y;
+        b.nWidth = 100; b.nHeight = 13;
+        add(13, b);
+    }
+};
+
+static void BuildSelServerBin(SceneBinBuilder& bb) {
+    bb.panel(65537, 0, -467, 0, 0, 287, 259);   // P_SERVER_SEL
+    bb.listbox(65542, 65537);                    // L_SELECT_SERVERG
+    bb.listbox(65543, 65537);                    // L_SELECT_SERVER
+    bb.button(65538, 65537, 50, 225);               // B_SERVER_SEL_OK
+    bb.button(65539, 65537, 190, 225);              // B_SERVER_SEL_EXIT
+    bb.panel(65870, 0, -499, 0, 0, 255, 171);   // P_LOGIN_BOX
+    bb.edit(65871, 65870, 113, 51);              // E_LOGIN_ID
+    bb.edit(65872, 65870, 113, 73);              // E_LOGIN_PASSWORD
+    bb.button(65873, 65870, 54, 107);               // B_LOGIN_OK
+    bb.button(65874, 65870, 148, 107);              // B_QUIT (Voltar)
+    bb.button(65875, 65870, 98, 135);               // B_CREATE_ID
+    bb.panel(311, 0, -12, 144, 0, 256, 256);    // TMP_LOGO_PANEL1
+    bb.panel(312, 0, -13, 400, 0, 256, 256);    // TMP_LOGO_PANEL2
+    bb.text(769, 0, 240, 580, 300, 16);          // TMT_SCENE_TEXT (copyright)
+    bb.text(5635, 0, 0, 0, 60, 14);              // TMT_SEL_SERVER_TEXT
+    bb.text(65876, 65870, 102, 8, 50, 16);       // T_LOGIN_BOX_TEXT
+}
+} // namespace
+
+TEST(ui, SelServerScene_boot_state) {
+    SceneBinBuilder bb; BuildSelServerBin(bb);
+    SControlContainer container;
+    std::string err;
+    EXPECT_TRUE(UILoader::ReadRCBin(bb.data.data(), bb.data.size(), container, &err));
+
+    tmx::SelectServerScene scene;
+    EXPECT_TRUE(scene.Init(&container));
+    scene.Layout(1024, 768);
+    scene.ApplyBootState();
+
+    // Boot: server select visible, login hidden (TMSelectServerScene.cpp:222-232,1344-1352)
+    EXPECT_TRUE(container.FindControl(65537)->m_bVisible == 1);
+    EXPECT_TRUE(container.FindControl(65870)->m_bVisible == 0);
+    EXPECT_TRUE(container.FindControl(65873)->m_bVisible == 0);
+    EXPECT_TRUE(container.FindControl(65874)->m_bVisible == 0);
+    EXPECT_TRUE(container.FindControl(65875)->m_bVisible == 0);
+    EXPECT_TRUE(container.FindControl(65543)->m_bVisible == 0);  // channel list
+    EXPECT_TRUE(container.FindControl(311)->m_bVisible == 1);
+    EXPECT_TRUE(!scene.QuitRequested());
+    EXPECT_TRUE(!scene.IsLoginVisible());
+}
+
+TEST(ui, SelServerScene_layout_centers) {
+    SceneBinBuilder bb; BuildSelServerBin(bb);
+    SControlContainer container;
+    std::string err;
+    EXPECT_TRUE(UILoader::ReadRCBin(bb.data.data(), bb.data.size(), container, &err));
+
+    tmx::SelectServerScene scene;
+    EXPECT_TRUE(scene.Init(&container));
+    scene.Layout(1024, 768);
+
+    // Login panel centered (TMSelectServerScene.cpp:157-158)
+    SControl* login = container.FindControl(65870);
+    EXPECT_TRUE(login->m_nPosX == (1024 - 255) * 0.5f);
+    EXPECT_TRUE(login->m_nPosY == (768 - 171) * 0.5f);
+    // Logo pair centered as a 512-wide unit; +20 at 1024 (TMSelectServerScene.cpp:171-181)
+    SControl* logo1 = container.FindControl(311);
+    EXPECT_TRUE(logo1->m_nPosX == 512.0f - 256.0f);
+    EXPECT_TRUE(logo1->m_nPosY == 10.0f * (768.0f / 600.0f) + 20.0f);
+    EXPECT_TRUE(container.FindControl(312)->m_nPosX == 512.0f);
+    // Copyright bottom (TMSelectServerScene.cpp:155)
+    SControl* cr = container.FindControl(769);
+    EXPECT_TRUE(cr->m_nPosY == 768.0f - 15.0f);
+    EXPECT_TRUE(cr->m_nPosX == (1024 - 300) * 0.5f);
+    // Server panel centered +75 down (TMSelectServerScene.cpp:1353-1357)
+    SControl* srv = container.FindControl(65537);
+    EXPECT_TRUE(srv->m_nPosX == (1024 - 287) * 0.5f);
+    EXPECT_TRUE(srv->m_nPosY == (768 - 259) * 0.5f + 75.0f);
+
+    // Idempotent: re-layout must not drift (nudges live in Init, not Layout)
+    scene.Layout(1024, 768);
+    EXPECT_TRUE(login->m_nPosX == (1024 - 255) * 0.5f);
+    EXPECT_TRUE(cr->m_nPosY == 768.0f - 15.0f);
+}
+
+TEST(ui, SelServerScene_flow) {
+    SceneBinBuilder bb; BuildSelServerBin(bb);
+    SControlContainer container;
+    std::string err;
+    EXPECT_TRUE(UILoader::ReadRCBin(bb.data.data(), bb.data.size(), container, &err));
+
+    tmx::SelectServerScene scene;
+    EXPECT_TRUE(scene.Init(&container));
+    scene.Layout(1024, 768);
+    scene.ApplyBootState();
+    container.SetSceneListener(&scene);
+
+    // Conectar → login box (TMSelectServerScene.cpp:607-616)
+    container.OnControlEvent(65538, 0);
+    EXPECT_TRUE(scene.IsLoginVisible());
+    EXPECT_TRUE(container.FindControl(65870)->m_bVisible == 1);
+    EXPECT_TRUE(container.FindControl(65873)->m_bVisible == 1);
+    EXPECT_TRUE(container.FindControl(65537)->m_bVisible == 0);
+    EXPECT_TRUE(container.GetFocusControl() == container.FindControl(65871));
+
+    // Voltar → server select (TMSelectServerScene.cpp:625-633)
+    container.OnControlEvent(65874, 0);
+    EXPECT_TRUE(!scene.IsLoginVisible());
+    EXPECT_TRUE(container.FindControl(65537)->m_bVisible == 1);
+    EXPECT_TRUE(container.FindControl(65870)->m_bVisible == 0);
+
+    // Fechar → quit request (WM_CLOSE in the original)
+    container.OnControlEvent(65539, 0);
+    EXPECT_TRUE(scene.QuitRequested());
+}
+
+TEST(ui, SelServerScene_login_button_rect_stays_transparent) {
+    // Phase 8b fix: showing the login box must NOT turn the text buttons'
+    // rect opaque (white squares) — dwColor stays 0 (SetAlphaLogin,
+    // TMSelectServerScene.cpp:1310-1335); only the panel gets alpha back.
+    SceneBinBuilder bb; BuildSelServerBin(bb);
+    SControlContainer container;
+    std::string err;
+    EXPECT_TRUE(UILoader::ReadRCBin(bb.data.data(), bb.data.size(), container, &err));
+    tmx::SelectServerScene scene;
+    EXPECT_TRUE(scene.Init(&container));
+    scene.Layout(1024, 768);
+    scene.ApplyBootState();
+    container.SetSceneListener(&scene);
+
+    container.OnControlEvent(65538, 0);  // Conectar
+    EXPECT_TRUE(container.FindControl(65873)->m_bVisible == 1);
+    EXPECT_TRUE(((SPanel*)container.FindControl(65873))->m_GCPanel.dwColor == 0);
+    EXPECT_TRUE(((SPanel*)container.FindControl(65870))->m_GCPanel.dwColor == 0xFFFFFFFF);
+}
+
+TEST(ui, SEditableText_click_focuses) {
+    // SControl.cpp:1066-1081 — LMB inside the edit sets m_bFocused; the
+    // container promotes it to the focus control (SControlContainer.cpp:64-66).
+    SceneBinBuilder bb; BuildSelServerBin(bb);
+    SControlContainer container;
+    std::string err;
+    EXPECT_TRUE(UILoader::ReadRCBin(bb.data.data(), bb.data.size(), container, &err));
+    tmx::SelectServerScene scene;
+    EXPECT_TRUE(scene.Init(&container));
+    scene.Layout(1024, 768);
+    scene.ApplyBootState();
+    container.SetSceneListener(&scene);
+    container.OnControlEvent(65538, 0);  // show login
+
+    // Login panel at ((1024-255)/2, (768-171)/2) = (384.5, 298.5);
+    // edit ID at panel-relative (113,51) → absolute ~(497, 349) center (547,355)
+    SControl* editID = container.FindControl(65871);
+    container.SetFocusedControl(nullptr);
+    container.OnMouseEvent(0x201 /*WM_LBUTTONDOWN*/, 0, 547, 355);
+    EXPECT_TRUE(container.GetFocusControl() == editID);
+    EXPECT_TRUE(editID->IsFocused() == 1);
+}
+
+TEST(ui, SelServerScene_tab_toggles_focus) {
+    // TMSelectServerScene.cpp:789-795 — TAB swaps ID<->PW focus.
+    SceneBinBuilder bb; BuildSelServerBin(bb);
+    SControlContainer container;
+    std::string err;
+    EXPECT_TRUE(UILoader::ReadRCBin(bb.data.data(), bb.data.size(), container, &err));
+    tmx::SelectServerScene scene;
+    EXPECT_TRUE(scene.Init(&container));
+    scene.Layout(1024, 768);
+    scene.ApplyBootState();
+    container.SetSceneListener(&scene);
+    container.OnControlEvent(65538, 0);  // login show focuses ID
+
+    SControl* editID = container.FindControl(65871);
+    SControl* editPW = container.FindControl(65872);
+    EXPECT_TRUE(container.GetFocusControl() == editID);
+
+    EXPECT_TRUE(scene.OnKeyDown(9) == 1);  // TAB
+    EXPECT_TRUE(container.GetFocusControl() == editPW);
+    EXPECT_TRUE(editID->IsFocused() == 0);
+    EXPECT_TRUE(editPW->IsFocused() == 1);
+
+    EXPECT_TRUE(scene.OnKeyDown(9) == 1);  // TAB again
+    EXPECT_TRUE(container.GetFocusControl() == editID);
+}
+
+TEST(ui, SelServerScene_click_conectar_transitions) {
+    // Full click path: mouse down+up on the Conectar button must fire the
+    // control event (not just a direct OnControlEvent call).
+    SceneBinBuilder bb; BuildSelServerBin(bb);
+    SControlContainer container;
+    std::string err;
+    EXPECT_TRUE(UILoader::ReadRCBin(bb.data.data(), bb.data.size(), container, &err));
+    tmx::SelectServerScene scene;
+    EXPECT_TRUE(scene.Init(&container));
+    scene.Layout(1024, 768);
+    scene.ApplyBootState();
+    container.SetSceneListener(&scene);
+
+    // Panel (368.5,329.5) + button (50,225) 50x23 → center (443, 565)
+    container.OnMouseEvent(513, 1, 443, 565);  // WM_LBUTTONDOWN
+    container.OnMouseEvent(514, 0, 443, 565);  // WM_LBUTTONUP
+    EXPECT_TRUE(scene.IsLoginVisible());
 }

@@ -54,6 +54,10 @@ struct GeomControl {
     float nPosX = 0, nPosY = 0;
     float nWidth = 0, nHeight = 0;
     uint32_t dwColor = 0xFFFFFFFF;
+    // Text color when strString is set. Separate from dwColor because buttons
+    // tint the (often transparent) image rect with dwColor but draw their
+    // label white (SControl.cpp:1412: pFont->SetText(str, 0xFFFFFFFF)).
+    uint32_t strColor = 0xFFFFFFFF;
     int nTextureSetIndex = -1;
     int nTextureIndex = 0;
     int nLayer = 0;

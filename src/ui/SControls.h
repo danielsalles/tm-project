@@ -82,6 +82,7 @@ public:
 
     void FrameMove2(stGeomList* pDrawList, IVector2 parentPos,
                     int layer, int arg) override;
+    int OnMouseEvent(unsigned int dwFlags, unsigned int wParam, int nX, int nY) override;
     int OnKeyDownEvent(int key) override;
     int OnCharEvent(char c) override;
 

@@ -158,7 +158,8 @@ void SControlContainer::OnEditingEvent(const char* composition) {
 }
 
 int SControlContainer::OnControlEvent(uint32_t controlID, uint32_t event) {
-    (void)controlID; (void)event;
+    if (m_pSceneListener)
+        return m_pSceneListener->OnControlEvent(controlID, event);
     return 0;
 }
 

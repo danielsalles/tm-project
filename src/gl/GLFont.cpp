@@ -8,6 +8,7 @@
 
 #include <cstring>
 #include <cctype>
+#include <cmath>
 #include <algorithm>
 #include <vector>
 
@@ -70,7 +71,7 @@ void GLFont::Shutdown() {
     m_cache.clear();
 }
 
-int GLFont::SplitLines(const char* str, char outLines[3][44], int* outWidths) const {
+int GLFont::SplitLines(const char* str, char outLines[3][256], int* outWidths) const {
     int lineCount = 0;
     int lineLen = 0;
     const char* p = str;
@@ -128,9 +129,17 @@ bool GLFont::Rasterize(const char* str, uint32_t color, StringTexture& out) {
     int lineCount = 0;
     int lineY = 0;
 
-    char lines[3][44];
+    char lines[3][256];
     int widths[3];
-    lineCount = SplitLines(str, lines, widths);
+    if (m_noWrap) {
+        // Pane UI: single line, no 42-char chunking (not TMFont2 semantics).
+        strncpy(lines[0], str, 255);
+        lines[0][255] = '\0';
+        lineCount = 1;
+        widths[0] = GetLineWidth(lines[0], (int)strlen(lines[0]));
+    } else {
+        lineCount = SplitLines(str, lines, widths);
+    }
 
     for (int i = 0; i < lineCount; ++i) {
         maxWidth = std::max(maxWidth, widths[i]);
@@ -159,7 +168,13 @@ bool GLFont::Rasterize(const char* str, uint32_t color, StringTexture& out) {
             int glyphH = y1 - y0;
             int glyphY = lineY + (int)(m_fontSize) + y0;
 
-            if (glyphW <= 0 || glyphH <= 0) continue;
+            // Advance BEFORE the empty-glyph early-out: space has no bitmap
+            // but still consumes width (words were collapsing together).
+            const int adv = (int)(advance * scale);
+            if (glyphW <= 0 || glyphH <= 0) {
+                x += adv;
+                continue;
+            }
 
             // Render glyph bitmap
             std::vector<unsigned char> glyphBitmap(glyphW * glyphH);
@@ -183,7 +198,7 @@ bool GLFont::Rasterize(const char* str, uint32_t color, StringTexture& out) {
                 }
             }
 
-            x += (int)(advance * scale);
+            x += adv;
         }
         lineY += (int)(m_fontSize + 1);
     }
@@ -263,6 +278,11 @@ void GLFont::SetText(const char* str, uint32_t color) {
 void GLFont::Render(UIBatcher& batch, float x, float y, int renderType,
                      int layer, float scale) {
     if (!m_lastTex || m_lastW <= 0 || m_lastH <= 0) return;
+
+    // Pixel-align: fractional positions sample the glyph texture between
+    // texels and blur the text (the original GDI path renders at int coords).
+    x = floorf(x);
+    y = floorf(y);
 
     // Shadow pass (+1, +1 offset, black with alpha)
     if (renderType == 1) {  // RENDER_SHADOW

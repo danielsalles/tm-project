@@ -31,6 +31,10 @@ public:
 
     int OnControlEvent(uint32_t controlID, uint32_t event) override;
 
+    // Scene-level event sink: controls fire OnControlEvent on the container
+    // (their listener); the container forwards to this listener (the scene).
+    void SetSceneListener(IEventListener* l) { m_pSceneListener = l; }
+
     void PushModal(SControl* ctrl);
     void PopModal();
 
@@ -52,6 +56,7 @@ private:
     SCursor* m_pCursor = nullptr;
     SControl* m_pFocusControl = nullptr;
     SControl* m_pModalControl[8] = {};
+    IEventListener* m_pSceneListener = nullptr;
     int m_bInvisibleUI = 0;
     uint32_t m_dwServerTime = 0;
 };

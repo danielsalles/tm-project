@@ -29,7 +29,9 @@ add_executable(tm_tests
   test_audio.cpp
   test_config.cpp
   test_http.cpp
-  test_input.cpp)
+  test_input.cpp
+  test_pane.cpp
+  test_serverlist.cpp)
 target_link_libraries(tm_tests PRIVATE tmcore tmgl)
 
 # dados dourados acessíveis por path relativo ao diretório do teste
@@ -71,4 +73,6 @@ add_test(NAME audio     COMMAND tm_tests audio)
 add_test(NAME config    COMMAND tm_tests config)
 add_test(NAME http      COMMAND tm_tests http)
 add_test(NAME input     COMMAND tm_tests input)
+add_test(NAME pane      COMMAND tm_tests pane)
+add_test(NAME serverlist COMMAND tm_tests serverlist)
 add_test(NAME glsmoke    COMMAND tm_glsmoke)

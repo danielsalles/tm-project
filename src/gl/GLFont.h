@@ -57,8 +57,13 @@ public:
     void SetSize(float s) { m_fontSize = s; }
     float GetSize() const { return m_fontSize; }
 
+    // Pane UI (phase 8d): the panel system's font renderer does not wrap at
+    // 42 chars (that's a TMFont2-ism, TMFont2.cpp:91-108). When set, long
+    // strings render as a single line.
+    void SetNoWrap(bool v) { m_noWrap = v; }
+
     // Split text into up to 3 lines (42 chars each, like original TMFont2).
-    int SplitLines(const char* str, char outLines[3][44], int* outWidths) const;
+    int SplitLines(const char* str, char outLines[3][256], int* outWidths) const;
 
     // Access to the last rendered texture (for RenderGeomControl text overlay).
     GLuint GetLastTexture() const { return m_lastTex; }
@@ -71,6 +76,7 @@ private:
     void* m_fontData = nullptr;          // stbtt_fontinfo internal
     std::vector<unsigned char> m_ttfData; // TTF bytes — must outlive m_fontData
     float m_fontSize = 12.0f;
+    bool m_noWrap = false;
     int m_atlasW = 512, m_atlasH = 64;  // texture dimensions (match original)
 
     std::unordered_map<StringKey, StringTexture, StringKeyHash> m_cache;

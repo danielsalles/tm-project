@@ -21,6 +21,9 @@ uint32_t ReadU32(const uint8_t* p) {
 // .wyt = "WT10" + TGA without the 18-byte footer (validated on mesh/cbt054.wyt:
 // uncompressed BGR(A), type 2). stb_image parses the TGA directly (footer not
 // needed) and handles the bottom-left origin flip.
+// NOTE: public (declared in GLTexture.h) — used by the pane system (phase 8d).
+} // namespace (temporarily, for LoadTextureWYT's external linkage)
+
 GLuint LoadTextureWYT(const uint8_t* fileBytes, size_t size) {
     if (size < 5 || memcmp(fileBytes, "WT10", 4) != 0) {
         Log("LoadTextureWYT: bad magic");
@@ -43,6 +46,8 @@ GLuint LoadTextureWYT(const uint8_t* fileBytes, size_t size) {
     stbi_image_free(pixels);
     return tex;
 }
+
+namespace {
 
 GLuint LoadListTexture(const char* fileName, GLuint& slot) {
     if (slot)
@@ -167,12 +172,17 @@ bool GLTextureManager::LoadList528(const uint8_t* data, size_t size, size_t maxE
     entries.resize(count);
     textures.assign(count, 0);
     for (size_t i = 0; i < count; ++i) {
-        const uint8_t* p = data + i * kEntry;   // A half
+        // Current client layout (v769.2, stTextureListInfo with szFilePart):
+        //   [0:255]   szFileName   ("mesh\bird0101.wys")
+        //   [255:510] szFilePart   ("mesh\bird0101" — name without extension)
+        //   [510]     cAlpha       ('N'/'A'/'C')
+        //   [512:528] dwLastUsedTime, dwShowTime, dwLastUsedTimeOld, dwShowTimeOld
+        const uint8_t* p = data + i * kEntry;
         memcpy(entries[i].fileName, p, 255);
         entries[i].fileName[254] = '\0';
-        entries[i].cAlpha = (char)p[255];
-        entries[i].dwLastUsedTime = ReadU32(p + 256);
-        entries[i].dwShowTime = ReadU32(p + 260);
+        entries[i].cAlpha = (char)p[510];
+        entries[i].dwLastUsedTime = ReadU32(p + 512);
+        entries[i].dwShowTime = ReadU32(p + 516);
         if (entries[i].cAlpha == 0 || entries[i].cAlpha == (char)0xCD)
             entries[i].cAlpha = 'N';
     }

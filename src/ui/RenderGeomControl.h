@@ -22,6 +22,12 @@ public:
     // Render a single GeomControl.
     void Render(GeomControl* ctrl);
 
+    // Texture set index resolution (RenderDevice.cpp:2833,3129):
+    // n >= 0 → set n; n < -2 → set (-n); -1/-2 stay as-is (color-rect path).
+    static int ResolveTextureSetIndex(int nTextureSetIndex) {
+        return nTextureSetIndex < -2 ? -nTextureSetIndex : nTextureSetIndex;
+    }
+
     // Render all controls in a draw list (called per layer).
     void RenderLayer(stGeomList* list);
 
